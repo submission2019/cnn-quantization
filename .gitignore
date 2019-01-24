@@ -1,0 +1,12 @@
+*.log
+*.pyc
+__pycache__/
+.pytest_cache
+*.tar
+venv/
+venv3/
+.env/
+.idea/
+logs/
+results/
+.ipynb_checkpoints/
