@@ -68,7 +68,7 @@ python inference/inference_sim.py -a resnet50 -b 512 -sm use --qtype int4 -pcq_w
 ```
 `* Prec@1 72.182 Prec@5 90.634`
 
-- Note that results could vary due to randomization of statistic gethering and kmeans initialization.  
+- Note that results could vary due to randomization of statistic gathering and kmeans initialization.  
 
 ## Solution for optimal clipping
 
