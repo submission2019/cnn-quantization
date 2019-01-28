@@ -32,8 +32,7 @@ cd kernels
 ```
 
 ## Prepare setup for Inference
-Low precision inference requires to find scale of low precision tensors ahead of time. In order to calculate scale we need to collect statistics of activations for specific topology and dataset.
-Note that all actions bellow are time consuming, but could be done ahead of inference time once.
+We use a profiling data-set of approximately 256 images sampled from the training-set to collect statistics of activations at offline time. These are needed later to calculate the scale/clipping value of each activation tenor.
 ### Collect statistics
 ```
 # Collect per layer statistics
@@ -50,7 +49,7 @@ python pytorch_quantizer/quantization/kmeans_quantization.py -a resnet50 -bits 4
 Quantized model will be saved to ~/mxt_sim/models
 
 ### Run inference experiments
-Resnet50 (8W4A) case with 4 bit activations and full pipeline of quantization optimizations.
+Post-training quantization of Res50 to 8-bit weights and 4-bit activations using the suggested quantization pipeline:
 ```
 python inference/inference_sim.py -a resnet50 -b 512 -sm use --qtype int4 -pcq_w -pcq_a -c laplace
 ```
@@ -72,8 +71,7 @@ python inference/inference_sim.py -a resnet50 -b 512 -sm use --qtype int4 -pcq_w
 
 ## Solution for optimal clipping
 
-The best of our knowladge, differentiable equations presented in the paper doesn't have analytical solution. We solve those empirically using scipy library and find optimal alpha value for Gaussian and Laplace cases. 
-We show linear dependency between optimal alpha and sigma for Gaussian case and optimal alpha and b for Laplace case.
+To find optimal clipping values for the Laplace/Gaussian case, we numerically solve Equations (12)/ (A4)
 
 [optimal_alpha.ipynb](optimal_alpha.ipynb)
 
