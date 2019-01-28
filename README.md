@@ -55,13 +55,13 @@ python inference/inference_sim.py -a resnet50 -b 512 -sm use --qtype int4 -pcq_w
 ```
 `* Prec@1 74.114 Prec@5 91.904`
 
-Resnet50 (4W8A) case with 4bit kmeans model and bias correction.
+Post-training quantization of Res50 to 4-bit weights and 8-bit activations using kmeans clustering:
 ```
 python inference/inference_sim.py -a resnet50 -b 512 -sm use --qtype int8 -qm 4 -qw f32
 ```
 `* Prec@1 74.242 Prec@5 91.764`
 
-Resnet50 (4W4A) case with 4bit activations, 4bit kmeans model, bias correction and full pipeline of quantization optimizations.
+Post-training quantization of Res50 to 4-bit weights and 4-bit activations using the suggested quantization pipeline:
 ```
 python inference/inference_sim.py -a resnet50 -b 512 -sm use --qtype int4 -pcq_w -pcq_a -c laplace -qm 4 -qw f32
 ```
