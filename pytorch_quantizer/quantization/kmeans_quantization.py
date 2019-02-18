@@ -27,8 +27,6 @@ def quantize1d_kmeans(x, num_bits=8, n_jobs=-1):
     # init = np.expand_dims(np.linspace(x.min(), x.max(), 2**num_bits), -1)
     kmeans = KMeans(n_clusters=2**num_bits, random_state=0, n_jobs=n_jobs)
     x_kmeans = kmeans.fit_predict(x)
-    kmeans.cluster_centers_[kmeans.cluster_centers_.argmax()] = x.max()
-    kmeans.cluster_centers_[kmeans.cluster_centers_.argmin()] = x.min()
     q_kmeans = np.array([kmeans.cluster_centers_[i] for i in x_kmeans])
     return q_kmeans.reshape(orig_shape)
 
