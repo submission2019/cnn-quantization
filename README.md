@@ -7,9 +7,10 @@
 - [pandas](<http://pandas.pydata.org/>) for logging to csv
 - [bokeh](<http://bokeh.pydata.org>) for training visualization
 - [scikit-learn](https://scikit-learn.org) for kmeans clustering
+- [mlflow](https://mlflow.org/) for logging
 To install requirements run:
 ```
-pip install torch torchvision bokeh pandas sklearn
+pip install torch torchvision bokeh pandas sklearn mlflow
 ```
 
 ## HW requirements
@@ -35,13 +36,22 @@ cd kernels
 ```
 
 ### Run inference experiments
-Post-training quantization of Res50 to 8-bit weights and 4-bit activations using the suggested quantization pipeline:
+Post-training quantization of Res50:
+
+- Experiment W4A4 naive:
 ```
-This section will be updated soon
+python inference/inference_sim.py -a resnet50 -b 512 --device_ids 1 -pcq_w -pcq_a -sh --qtype int4 -qw int4
 ```
+'* Prec@1 62.154 Prec@5 84.252'
+
+- Experiment W4A4 + ACIQ + Bit Alloc(A) + Bit Alloc(W) + Bias correction:
+```
+python inference/inference_sim.py -a resnet50 -b 512 --device_ids 1 -pcq_w -pcq_a -sh --qtype int4 -qw int4 -c laplace -baa -baw -bcw
+```
+'* Prec@1 73.330 Prec@5 91.334'
 
 
-- Note that results could vary due to randomization of the data.  
+- Note that accuracy results could have 0.5% variance due to data shuffling.
 
 ## Solution for optimal clipping
 
