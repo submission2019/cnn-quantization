@@ -29,8 +29,8 @@ from utils.mark_relu import resnet_mark_before_relu
 from utils.model_naming import set_node_names
 import numpy as np
 from utils.dump_manager import DumpManager as DM
-import pretrainedmodels
-import pretrainedmodels.utils as mutils
+# import pretrainedmodels
+# import pretrainedmodels.utils as mutils
 from pathlib import Path
 
 import mlflow
@@ -49,7 +49,7 @@ model_names = sorted(name for name in models.__dict__
     and callable(models.__dict__[name]))
 model_names.append('shufflenet')
 model_names.append('mobilenetv2')
-model_names+=pretrainedmodels.model_names
+# model_names+=pretrainedmodels.model_names
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
 parser.add_argument('--data', metavar='DIR', default=IMAGENET_FOR_INFERENCE,
@@ -152,14 +152,14 @@ class InferenceModel:
             params = torch.load('ShuffleNet_1g8_Top1_67.408_Top5_87.258.pth.tar')
             self.model = torch.nn.DataParallel(self.model, args.device_ids)
             self.model.load_state_dict(params)
-        elif args.arch == 'mobilenetv2':
-            from models.MobileNetV2 import MobileNetV2 as mobilenetv2
-            self.model = mobilenetv2()
-            params = torch.load('mobilenetv2_Top1_71.806_Top2_90.410.pth.tar')
-            self.model = torch.nn.DataParallel(self.model, args.device_ids)
-            self.model.load_state_dict(params)
-        elif args.arch not in models.__dict__ and args.arch in pretrainedmodels.model_names:
-            self.model = pretrainedmodels.__dict__[args.arch](num_classes=1000, pretrained='imagenet')
+        # elif args.arch == 'mobilenetv2':
+        #     from models.MobileNetV2 import MobileNetV2 as mobilenetv2
+        #     self.model = mobilenetv2()
+        #     params = torch.load('mobilenetv2_Top1_71.806_Top2_90.410.pth.tar')
+        #     self.model = torch.nn.DataParallel(self.model, args.device_ids)
+        #     self.model.load_state_dict(params)
+        # elif args.arch not in models.__dict__ and args.arch in pretrainedmodels.model_names:
+        #     self.model = pretrainedmodels.__dict__[args.arch](num_classes=1000, pretrained='imagenet')
         else:
             self.model = models.__dict__[args.arch](pretrained=True)
 
