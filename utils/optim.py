@@ -9,7 +9,6 @@ def eval_func(f, x):
         f = eval(f)
     return f(x)
 
-
 class OptimRegime(object):
     """
     Reconfigures the optimizer according to setting list.

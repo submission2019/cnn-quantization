@@ -6,6 +6,7 @@ import math
 from utils.monitor import Monitor
 from pytorch_quantizer.quantization.inference.statistic_manager import StatisticManager as SM
 
+
 class StatisticalClipper(Function):
     def __init__(self, rho):
         self.rho = rho

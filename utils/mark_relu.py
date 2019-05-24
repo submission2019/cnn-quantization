@@ -1,6 +1,7 @@
 from torchvision.models.resnet import Bottleneck, BasicBlock
 from torch.nn.parallel.data_parallel import DataParallel
 
+
 def mark_bottlenetck_before_relu(model):
     for m in model.children():
         if isinstance(m, Bottleneck):

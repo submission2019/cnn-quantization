@@ -7,7 +7,6 @@ def uniform_midtread_quantizer(x, Q):
     xQ = np.round(x / Q) * Q
     return xQ
 
-
 def GaussianClippingAnalysis(Alpha, sigma,bitWidth):
     Analysis = []
     for alpha in Alpha:

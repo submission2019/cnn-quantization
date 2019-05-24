@@ -6,6 +6,7 @@ import logging.config
 from datetime import datetime
 import json
 
+
 import pandas as pd
 from bokeh.io import output_file, save, show
 from bokeh.plotting import figure

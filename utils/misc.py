@@ -75,7 +75,6 @@ class Singleton(type):
 
 import re
 
-
 def sorted_nicely(l):
     """ Sorts the given iterable in the way that is expected.
 

@@ -1,7 +1,6 @@
 from torch.autograd import Function
 
 # f is any callable object
-
 # attacher to forward
 class attach_to_forward_class(Function):
     @staticmethod

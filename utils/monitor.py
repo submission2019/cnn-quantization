@@ -14,7 +14,6 @@ def patch_call(instance, func):
     instance.__class__ = _
 
 
-
 class Monitor(metaclass=Singleton):
     def __init__(self, dump_dir=None):
         if dump_dir is None:

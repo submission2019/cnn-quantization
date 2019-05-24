@@ -5,7 +5,6 @@
 
 #include <vector>
 
-
 __global__ void GEMMLowpKernel(const float* in, const int N, float* out,
                                float scale, float shift, long long qmax, const float* noise, bool enforce_true_zero) {
   for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < N; i += blockDim.x * gridDim.x) {
