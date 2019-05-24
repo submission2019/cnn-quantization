@@ -41,13 +41,13 @@ cd kernels
 
 - Experiment W4A4 naive:
 ```
-python inference/inference_sim.py -a resnet50 -b 512 --device_ids 1 -pcq_w -pcq_a -sh --qtype int4 -qw int4
+python inference/inference_sim.py -a resnet50 -b 512 -pcq_w -pcq_a -sh --qtype int4 -qw int4
 ```
 >* Prec@1 62.154 Prec@5 84.252
 
 - Experiment W4A4 + ACIQ + Bit Alloc(A) + Bit Alloc(W) + Bias correction:
 ```
-python inference/inference_sim.py -a resnet50 -b 512 --device_ids 1 -pcq_w -pcq_a -sh --qtype int4 -qw int4 -c laplace -baa -baw -bcw
+python inference/inference_sim.py -a resnet50 -b 512 -pcq_w -pcq_a -sh --qtype int4 -qw int4 -c laplace -baa -baw -bcw
 ```
 >* Prec@1 73.330 Prec@5 91.334
 
