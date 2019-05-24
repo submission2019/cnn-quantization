@@ -12,6 +12,9 @@ To install requirements run:
 pip install torch torchvision bokeh pandas sklearn
 ```
 
+## HW requirements
+NVIDIA GPU / cuda support
+
 ## Data
 - To run this code you need validation set from ILSVRC2012 data
 - Configure your dataset path by providing --data "PATH_TO_ILSVRC" or copy ILSVRC dir to ~/datasets/ILSVRC2012.
@@ -31,43 +34,14 @@ cd kernels
 ./build_all.sh
 ```
 
-## Prepare setup for Inference
-We use a profiling data-set of approximately 256 images sampled from the training-set to collect statistics of activations at offline time. These are needed later to calculate the scale/clipping value of each activation tenor.
-### Collect statistics
-```
-# Collect per layer statistics
-python inference/inference_sim.py -a resnet50 -b 256 -sm collect -ac --qtype int4
-# Collect per output channel statistics
-python inference/inference_sim.py -a resnet50 -b 256 -sm collect -ac --qtype int4 -pcq_a
-```
-Statistics will be saved under ~/mxt_sim/statistics folder.
-
-### Generate quantized model
-```
-python pytorch_quantizer/quantization/kmeans_quantization.py -a resnet50 -bits 4 -t quantize
-```
-Quantized model will be saved to ~/mxt_sim/models
-
 ### Run inference experiments
 Post-training quantization of Res50 to 8-bit weights and 4-bit activations using the suggested quantization pipeline:
 ```
-python inference/inference_sim.py -a resnet50 -b 512 -sm use --qtype int4 -pcq_w -pcq_a -c laplace
+This section will be updated soon
 ```
-`* Prec@1 74.114 Prec@5 91.904`
 
-Post-training quantization of Res50 to 4-bit weights and 8-bit activations using kmeans clustering:
-```
-python inference/inference_sim.py -a resnet50 -b 512 -sm use --qtype int8 -qm 4 -qw f32
-```
-`* Prec@1 74.242 Prec@5 91.764`
 
-Post-training quantization of Res50 to 4-bit weights and 4-bit activations using the suggested quantization pipeline:
-```
-python inference/inference_sim.py -a resnet50 -b 512 -sm use --qtype int4 -pcq_w -pcq_a -c laplace -qm 4 -qw f32
-```
-`* Prec@1 72.182 Prec@5 90.634`
-
-- Note that results could vary due to randomization of statistic gathering and kmeans initialization.  
+- Note that results could vary due to randomization of the data.  
 
 ## Solution for optimal clipping
 
