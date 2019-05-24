@@ -59,8 +59,8 @@ To find optimal clipping values for the Laplace/Gaussian case, we numerically so
 
 [optimal_alpha.ipynb](optimal_alpha.ipynb)
 
-Gaussian case, linear dependency
-![Gaussian case](figures/opt_alpha_gaussian.png)
+<!---Gaussian case, linear dependency--->
+<!---![Gaussian case](figures/opt_alpha_gaussian.png)--->
 
 ## Quantization with optimal clipping
 In order to quantize tensor to M bit with optimal clipping we use GEMMLOWP quantization with small modification. We replace dynamic range in scale computation by 2*alpha where alpha is optimal clipping value.
