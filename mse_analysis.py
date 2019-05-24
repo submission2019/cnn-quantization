@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import math
 
+
 def uniform_midtread_quantizer(x, Q):
     xQ = np.round(x / Q) * Q
     return xQ
