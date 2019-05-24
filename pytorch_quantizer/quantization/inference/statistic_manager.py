@@ -12,11 +12,12 @@ home = str(Path.home())
 base_dir = os.path.join(home, 'mxt-sim')
 
 class StatisticManager(metaclass=Singleton):
-    def __init__(self, folder, load_stats, stats = ['max', 'min', 'std', 'mean', 'kurtosis', 'mean_abs', 'b', 'dim'], kld_threshold=False, collect_err=True):
+    def __init__(self, folder, load_stats, stats = ['max', 'min', 'std', 'mean', 'kurtosis', 'mean_abs', 'b', 'dim'], batch_avg=False, kld_threshold=False, collect_err=True):
         self.name = folder
         self.folder = os.path.join(base_dir, 'statistics', folder)
         self.stats_names = stats
         self.collect_err = collect_err
+        self.batch_avg = batch_avg
         if collect_err:
             self.stats_names.append('mse_lowp')
             self.stats_names.append('mse_gaus')
@@ -42,7 +43,7 @@ class StatisticManager(metaclass=Singleton):
             self.stats_df = None
         pass
 
-    def save_tensor_stats(self, tensor, tag, id, tensors_q={}, global_min_max=False):
+    def save_tensor_stats(self, tensor, tag, id, tensors_q={}, force_global_min_max=False):
         stat_arr = []
         # Calculate tensor stats
         for sn in self.stats_names:
@@ -60,9 +61,17 @@ class StatisticManager(metaclass=Singleton):
             elif sn == 'mean':
                 st = t.mean()
             elif sn == 'max':
-                st = t.max() if global_min_max else torch.mean(tensor.view(tensor.shape[0], -1).max(dim=-1)[0])
+                if force_global_min_max:
+                    st = t.max()
+                else:
+                    st = torch.mean(tensor.view(tensor.shape[0], -1).max(dim=-1)[0]) \
+                        if self.batch_avg else t.max()
             elif sn == 'min':
-                st = t.min() if global_min_max else torch.mean(tensor.view(tensor.shape[0], -1).min(dim=-1)[0])
+                if force_global_min_max:
+                    st = t.min()
+                else:
+                    st = torch.mean(tensor.view(tensor.shape[0], -1).min(dim=-1)[0]) \
+                        if self.batch_avg else t.min()
             # elif sn == 'dist':
             #     st = torch.sqrt(torch.sum(t**2, dim=-1))
             elif sn == 'dim':

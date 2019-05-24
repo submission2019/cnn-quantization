@@ -6,14 +6,18 @@ from utils import attacher
 from utils.monitor import Monitor
 from .statistic_manager import StatisticManager
 from .statistic_manager_perchannel import StatisticManagerPerChannel
-from .measure_statistics import MeasureStatistics as MS
+from .distance_stats import MeasureStatistics as MS
+# from .measure_statistics import MeasureStatistics as MS
 from pytorch_quantizer.quantization.quantization_manager import QuantizationManagerBase
 from enum import Enum
 from itertools import count
 import os
 import numpy as np
+from utils.dump_manager import DumpManager as DM
+from pytorch_quantizer.clipping.clipping_manager import StatisticalClipper, RatioClipper
 from pytorch_quantizer.quantization.qtypes.dummy_quantizer import DummyQuantizer
 
+VERBOSE = True
 
 class StatsMode(Enum):
     no_stats = 1
@@ -61,10 +65,10 @@ class MaxPool2dWithId(nn.MaxPool2d):
                 QMI().stats_manager.save_tensor_stats(out, 'activation_pooling', out_id)
             elif QMI().stats_mode is StatsMode.use_stats:
                 # Quantize using statistics
-                out = QMI().quantize_instant(out, "activation_pooling", stat_id=out_id)
+                out = QMI().quantize_instant(out, "activation_pooling", stat_id=out_id, verbose=QMI().verbose)
             else:
                 # No stats, quantize using actual values
-                out = QMI().quantize_instant(out, "activation_pooling")
+                out = QMI().quantize_instant(out, "activation_pooling", verbose=QMI().verbose)
 
         return out
 
@@ -88,12 +92,61 @@ class AvgPool2dWithId(nn.AvgPool2d):
                 QMI().stats_manager.save_tensor_stats(out, tag_act, out_id)
             elif QMI().stats_mode is StatsMode.use_stats:
                 # Quantize using statistics
-                out = QMI().quantize_instant(out, tag_act, stat_id=out_id)
+                out = QMI().quantize_instant(out, tag_act, stat_id=out_id, verbose=QMI().verbose)
             else:
                 # No stats, quantize using actual values
-                out = QMI().quantize_instant(out, tag_act)
+                out = QMI().quantize_instant(out, tag_act, verbose=QMI().verbose)
 
         return out
+
+
+class DeviceCache:
+    def __init__(self):
+        self.devices_cache = {}
+
+    def store(self, tid, t):
+        if tid in self:
+            return
+
+        # Store t in cache
+        if t.device not in self.devices_cache:
+            self.devices_cache[t.device] = {}
+
+        self.devices_cache[t.device][tid] = t
+
+    def get(self, tid, device):
+        # If tid not cached on any device None will be returned
+        t = None
+
+        # Check if tensor with this id already stored on this device
+        if device in self.devices_cache and tid in self.devices_cache[device]:
+            t = self.devices_cache[device][tid]
+        else:
+            # Otherwise search on other devices and copy to current if exist
+            for dev in self.devices_cache:
+                if tid in self.devices_cache[dev]:
+                    t = self.devices_cache[dev][tid]
+                    break
+
+            if t is not None:
+                # t was found, add it to the cache on this device
+                if device not in self.devices_cache:
+                    self.devices_cache[device] = {}
+                self.devices_cache[device][tid] = t.to(device)
+                t = self.devices_cache[device][tid]
+
+        return t
+
+    def __contains__(self, tid):
+        for dev in self.devices_cache:
+            if tid in self.devices_cache[dev]:
+                return True
+
+        return False
+
+
+bias_corr_cache = DeviceCache()
+
 
 class Conv2dWithId(nn.Conv2d):
     _id = count(0)
@@ -102,6 +155,7 @@ class Conv2dWithId(nn.Conv2d):
         super(Conv2dWithId, self).__init__(in_channels, out_channels, kernel_size, stride,
                  padding, dilation, groups, bias)
         self.id = next(self._id)
+        self.eps = torch.tensor([1e-8])
         # print('conv_%d' % self.id)
 
     def forward(self, input):
@@ -112,92 +166,87 @@ class Conv2dWithId(nn.Conv2d):
             # Uncomment to enable dump
             # torch.save(out, os.path.join('dump', activation_id + '.pt'))
         else:
-            orig_weight = self.weight.data
-            if self.bias is not None:
-                orig_bias = self.bias.data
-            if QMI().stats_mode is not StatsMode.collect_stats:
-                if input.shape[1] == 3:
-                    # first layer leave in 8 bit
-                    self.weight.data = QMI().quantize_instant(self.weight, "weight", override_att=('num_bits', 8))
-                else:
-                    self.weight.data = QMI().quantize_instant(self.weight, "weight")
-                if self.bias is not None:
-                    self.bias.data = QMI().quantize_instant(self.bias, "bias")
-
             out = super(Conv2dWithId, self).forward(input)
             tag_act = 'activation_classifier' if out.shape[1] == 1000 else 'activation'
-            self.weight.data = orig_weight
-            if self.bias is not None:
-                self.bias.data = orig_bias
 
             if QMI().stats_mode is StatsMode.collect_stats:
-                out_lowp = QMI().quantize_instant(out, tag_act, half_range=hasattr(self, 'before_relu'), override_att=('clipping', 'no'))
-                out_gaus = QMI().quantize_instant(out, tag_act, half_range=hasattr(self, 'before_relu'), override_att=('clipping', 'gaus'))
-                out_laplace = QMI().quantize_instant(out, tag_act, half_range=hasattr(self, 'before_relu'), override_att=('clipping', 'laplace'))
-
-                q = QMI().op_manager.get_quantizer(tag_act)
-                if hasattr(self, 'before_relu') or q.force_positive:  # Currently applicable only for resnet
-                    out_pos = torch.clamp(out, 0, out.max())
-                else:
-                    out_pos = out
-                QMI().stats_manager.save_tensor_stats(out, self.internal_name, activation_id, tensors_q={'orig': out_pos, 'lowp': out_lowp, 'gaus': out_gaus, 'laplace': out_laplace})
+                QMI().stats_manager.save_tensor_stats(out, self.internal_name, activation_id)
             elif QMI().stats_mode is StatsMode.use_stats:
                 # Quantize using statistics
-                out = QMI().quantize_instant(out, tag_act, stat_id=activation_id, half_range=hasattr(self, 'before_relu'))
+                out_q = QMI().quantize_instant(out, tag_act, stat_id=activation_id,
+                                               half_range=hasattr(self, 'before_relu'), verbose=QMI().verbose)
+                # print("%s: %d" % (activation_id, out.shape[2]*out.shape[3]))
+                if QMI().bcorr_act:
+                    # if activation_id in bias_corr_cache:
+                    #     q_bias = bias_corr_cache.get(activation_id, out_q.device)
+                    # else:
+                    #     # TODO: cover case of not per channel quantization
+                    #     q_bias = out.transpose(0, 1).contiguous().view(out.shape[1], -1).mean(-1) - out_q.transpose(0, 1).contiguous().view(out_q.shape[1], -1).mean(-1)
+                    #     bias_corr_cache.store(activation_id, q_bias)
+
+                    if hasattr(self, 'before_relu') or QMI().op_manager.fused_relu:
+                        out = torch.nn.functional.relu(out)
+
+                    temp = out.transpose(0, 1).contiguous().view(out.shape[1], -1)
+                    q_bias = temp.sum(-1) - out_q.transpose(0, 1).contiguous().view(out_q.shape[1], -1).sum(-1)
+                    count = (temp > 0).sum(-1).type(q_bias.dtype)
+                    q_bias /= (count + self.eps.to(q_bias.device))
+
+                    out_q += (out_q > 0).type(out_q.dtype) * q_bias.view(1, q_bias.numel(), 1, 1)
+
+                    # norm_corr = torch.sqrt(torch.norm(out.transpose(0, 1).contiguous().view(out.shape[1], -1), dim=-1) / \
+                    #             (torch.norm(out_q.transpose(0, 1).contiguous().view(out_q.shape[1], -1), dim=-1) + self.eps.to(out_q.device)))
+                    # norm_corr = torch.sqrt(torch.norm(out) / torch.norm(out_q))
+                    # out_q = out_q * norm_corr#.view(1, norm_corr.numel(), 1, 1)
+
+                out = out_q
+
             else:
                 # No stats, quantize using actual values
-                out = QMI().quantize_instant(out, tag_act, half_range=hasattr(self, 'before_relu'))
+                out = QMI().quantize_instant(out, tag_act, half_range=hasattr(self, 'before_relu'), verbose=QMI().verbose)
 
-            if MS().enabled:
-                out_orig = super(Conv2dWithId, self).forward(input)
-                if self.bias is not None:
-                    out_orig = out_orig - self.bias.data.view(1,self.bias.shape[0],1,1)
-                    out_nb = out - self.bias.data.view(1,self.bias.shape[0],1,1)
-                    MS().save_measure(out_orig, out_nb, input, self.weight.data, activation_id)
-                else:
-                    MS().save_measure(out_orig, out, input, self.weight.data, activation_id)
+        if QMI().measure_stats.enabled:
+            QMI().measure_stats.save_measure(out, activation_id)
+
+        # Uncomment for debug
+        # t = out.transpose(0, 1).contiguous().view(out.shape[1], -1)  # C x N x H x W
+        # print(np.max([torch.unique(t[i]).numel() for i in range(t.shape[0])]))
+        # print(torch.unique(out).numel())
 
         return out
 
 
 class LinearWithId(nn.Linear):
     _id = count(0)
+
     def __init__(self, in_features, out_features, bias=True):
         super(LinearWithId, self).__init__(in_features, out_features, bias)
         self.id = next(self._id)
 
     def forward(self, input):
+        activation_id = 'linear%d_activation' % self.id
         if not QMI().enabled:
-            return super(LinearWithId, self).forward(input)
+            out = super(LinearWithId, self).forward(input)
         else:
             tag_act = 'activation_classifier' if self.weight.shape[0] == 1000 else 'activation_linear'
-            tag_weight = 'weight_classifier' if self.weight.shape[0] == 1000 else 'weight'
             half_range = hasattr(self, 'before_relu') if self.weight.shape[0] != 1000 else False
-            orig_weight = self.weight.data
-            if self.bias is not None:
-                orig_bias = self.bias.data
-            if QMI().stats_mode is not StatsMode.collect_stats:
-                self.weight.data = QMI().quantize_instant(self.weight, tag_weight)
-                if self.bias is not None:
-                    self.bias.data = QMI().quantize_instant(self.bias, "bias")
             out = super(LinearWithId, self).forward(input)
-            self.weight.data = orig_weight
-            if self.bias is not None:
-                self.bias.data = orig_bias
 
-            activation_id = 'linear%d_activation' % self.id
             if QMI().stats_mode is StatsMode.collect_stats:
-                QMI().stats_manager.save_tensor_stats(out, tag_act, activation_id, global_min_max=('classifier' in tag_act))
+                QMI().stats_manager.save_tensor_stats(out, tag_act, activation_id, force_global_min_max=('classifier' in tag_act))
             elif QMI().stats_mode is StatsMode.use_stats:
-                out = QMI().quantize_instant(out, tag_act, stat_id=activation_id, half_range=half_range)
+                out_q = QMI().quantize_instant(out, tag_act, stat_id=activation_id, half_range=half_range,
+                                               verbose=QMI().verbose)
+
+                out = out_q
+
             else:
-                out = QMI().quantize_instant(out, tag_act, half_range=half_range)
+                out = QMI().quantize_instant(out, tag_act, half_range=half_range, verbose=QMI().verbose)
 
-            if MS().enabled:
-                out_orig = super(LinearWithId, self).forward(input)
-                MS().save_measure(out_orig, out, input, self.weight.data, activation_id)
+        if QMI().measure_stats.enabled:
+            QMI().measure_stats.save_measure(out, activation_id)
 
-            return out
+        return out
 
 
 # TODO: batch norm folding
@@ -210,69 +259,54 @@ class BatchNorm2dWithId(nn.BatchNorm2d):
         # print('bn_%d' % self.id)
 
     def forward(self, input):
+        activation_id = 'bn%d_activation' % self.id
+        if QMI().bn_folding and hasattr(self, 'absorbed'):
+            return input
+
         if not QMI().enabled:
-            return super(BatchNorm2dWithId, self).forward(input)
-        else:
-            if QMI().bn_folding and hasattr(self, 'absorbed'):
-                return input
-            # else:
-            #     # Do regular BN if floding is set
-            #     return super(BatchNorm2dWithId, self).forward(input)
-
-            orig_weight = self.weight.data
-            if self.bias is not None:
-                orig_bias = self.bias.data
-            if QMI().stats_mode is not StatsMode.collect_stats:
-                self.weight.data = QMI().quantize_instant(self.weight, "weight")
-                if self.bias is not None:
-                    self.bias.data = QMI().quantize_instant(self.bias, "bias")
-
             out = super(BatchNorm2dWithId, self).forward(input)
-            self.weight.data = orig_weight
-            if self.bias is not None:
-                self.bias.data = orig_bias
-
-            activation_id = 'bn%d_activation' % self.id
+        else:
+            out = super(BatchNorm2dWithId, self).forward(input)
             if QMI().stats_mode is StatsMode.collect_stats:
                 QMI().stats_manager.save_tensor_stats(out, 'activation', activation_id)
             elif QMI().stats_mode is StatsMode.use_stats:
                 # Quantize using statistics
-                out = QMI().quantize_instant(out, "activation", stat_id=activation_id, half_range=hasattr(self, 'before_relu'))
+                out = QMI().quantize_instant(out, "activation", stat_id=activation_id, half_range=hasattr(self, 'before_relu'), verbose=QMI().verbose)
             else:
                 # No stats, quantize using actual values
-                out = QMI().quantize_instant(out, "activation", half_range=hasattr(self, 'before_relu'))
+                out = QMI().quantize_instant(out, "activation", half_range=hasattr(self, 'before_relu'), verbose=QMI().verbose)
 
-            if MS().enabled:
-                out_orig = super(BatchNorm2dWithId, self).forward(input)
-                if self.bias is not None:
-                    out_orig = out_orig - self.bias.data.view(1,self.bias.shape[0],1,1)
-                    out_nb = out - self.bias.data.view(1,self.bias.shape[0],1,1)
-                    MS().save_measure(out_orig, out_nb, input, self.weight.data, activation_id)
-                else:
-                    MS().save_measure(out_orig, out, input, self.weight.data, activation_id)
+        if QMI().measure_stats.enabled:
+            QMI().measure_stats.save_measure(out, activation_id)
 
-            return out
+        return out
 
 
 class QuantizationManagerInference(QuantizationManagerBase):
     def __init__(self, args, qparams):
         super(QuantizationManagerInference, self).__init__()
+        self.args = args
+        self.verbose = False
         self.quantize = args.qtype is not None
         self.disable_quantization = args.q_off
         self.op_manager = self.createTruncationManager(args, qparams)
         self.enabled = False
         self.bn_folding = False
+        self.bcorr_act = args.bias_corr_act
+        self.bcorr_weight = args.bias_corr_weight
+        self.vcorr_weight = args.var_corr_weight
         sf = args.stats_folder if args.stats_folder is not None else args.arch
         if args.kld_threshold:
             sf += '_kld_' + args.qtype
 
         self.stats_manager = None
         if args.stats_mode == 'collect':
+            print("Collecting statistics...")
             self.stats_mode = StatsMode.collect_stats
             if args.per_channel_quant_act:
-                self.stats_manager = StatisticManagerPerChannel(sf, load_stats=False)
+                self.stats_manager = StatisticManagerPerChannel(sf, load_stats=False, batch_avg=args.stats_batch_avg)
             else:
-                self.stats_manager = StatisticManager(sf, load_stats=False, kld_threshold=args.kld_threshold)
+                self.stats_manager = StatisticManager(sf, load_stats=False, kld_threshold=args.kld_threshold, batch_avg=args.stats_batch_avg)
         elif args.stats_mode == 'use':
             self.stats_mode = StatsMode.use_stats
             if args.per_channel_quant_act:
@@ -282,10 +316,18 @@ class QuantizationManagerInference(QuantizationManagerBase):
             self.stats_mode = StatsMode.no_stats
             self.stats_manager = None
 
+        self.measure_stats = MS(args.arch)
+        if args.measure_stats:
+            # enable measuring statistics
+            self.measure_stats.__enter__()
+
+
     def __exit__(self, *args):
         self.op_manager.__exit__(args)
         if self.stats_manager is not None:
             self.stats_manager.__exit__()
+        if self.measure_stats is not None:
+            self.measure_stats.__exit__()
         super(QuantizationManagerInference, self).__exit__(args)
 
     def createTruncationManager(self, args, qparams):
@@ -296,8 +338,8 @@ class QuantizationManagerInference(QuantizationManagerBase):
 
         return op_manager
 
-    def quantize_instant(self, tensor, tag="", stat_id=None, half_range=False, override_att=None):
-        return self.op_manager.quantize_instant(tensor, tag, stat_id, half_range, override_att)
+    def quantize_instant(self, tensor, tag="", stat_id=None, half_range=False, override_att=None, verbose=False):
+        return self.op_manager.quantize_instant(tensor, tag, stat_id, half_range, override_att, verbose)
 
     def set_8bit_list(self, ignore_ids):
         self.op_manager.set_8bit_list(ignore_ids)
@@ -305,6 +347,45 @@ class QuantizationManagerInference(QuantizationManagerBase):
     def reset_counters(self):
         ReLUWithId._id = count(0)
         pass
+
+    def quantize_model(self, model):
+        if self.args.stats_mode == 'collect':
+            return
+
+        for n, m in model.named_modules():
+            weight_q = None
+            if isinstance(m, torch.nn.Conv2d):
+                if m.weight.shape[1] == 3:
+                    # first layer leave in 8 bit
+                    weight_q = QMI().quantize_instant(m.weight, "weight", override_att=('num_bits', 8), verbose=True)
+                else:
+                    weight_q = QMI().quantize_instant(m.weight, "weight", verbose=True)
+
+            elif isinstance(m, torch.nn.Linear):
+                tag_weight = 'weight_classifier' if m.weight.shape[0] == 1000 else 'weight'
+                weight_q = QMI().quantize_instant(m.weight, tag_weight, verbose=True)
+
+            if weight_q is not None:
+                if self.vcorr_weight or self.bcorr_weight:
+                    bias_q = weight_q.view(weight_q.shape[0], -1).mean(-1)
+                    bias_q = bias_q.view(bias_q.numel(), 1, 1, 1) if len(weight_q.shape) == 4 else bias_q.view(bias_q.numel(), 1)
+                    bias_orig = m.weight.view(m.weight.shape[0], -1).mean(-1)
+                    bias_orig = bias_orig.view(bias_orig.numel(), 1, 1, 1) if len(weight_q.shape) == 4 else bias_orig.view(bias_orig.numel(), 1)
+
+                if self.vcorr_weight:
+                    eps = torch.tensor([1e-8]).to(weight_q.device)
+                    var_corr = m.weight.view(m.weight.shape[0], -1).std(dim=-1) / \
+                            (weight_q.view(weight_q.shape[0], -1).std(dim=-1) + eps)
+                    var_corr = (var_corr.view(var_corr.numel(), 1, 1, 1) if len(weight_q.shape) == 4 else var_corr.view(var_corr.numel(), 1))
+
+                    # Correct variance
+                    weight_q = (weight_q - bias_q) * var_corr + bias_q
+
+                if self.bcorr_weight:
+                    # Correct mean
+                    weight_q = weight_q - bias_q + bias_orig
+
+                m.weight.data = weight_q
 
 
 # Alias
@@ -319,8 +400,6 @@ class TruncationOpManagerInference:
         return quantizer, quant_params
 
     def __fill_quantizers__(self, qtype, qparams, arch=None, qweight='int8'):
-        fused_relu = arch is not None and (arch == 'alexnet' or arch == 'vgg16' or arch == 'vgg16_bn' or arch == 'inception_v3' or 'squeezenet' in arch)
-
         classifier_quantizer, _ = self.__load_quantizer__('int8', qparams)
         classifier_quantizer.clipping = 'no'
         classifier_quantizer.kld = False
@@ -337,12 +416,16 @@ class TruncationOpManagerInference:
             weights_quantizer.pcq_a = False
             weights_quantizer.clipping = 'no'
             weights_quantizer.kld = False
+            weights_quantizer.bit_alloc = False
+            weights_quantizer.stats_kind = 'max'
         self.quantizers['weight'] = weights_quantizer
 
         weights_quantizer, _ = self.__load_quantizer__('int8', qparams)
         weights_quantizer.pcq_a = False
         weights_quantizer.clipping = 'no'
         weights_quantizer.kld = False
+        weights_quantizer.bit_alloc = False
+        weights_quantizer.stats_kind = 'max'
         self.quantizers['weight_classifier'] = weights_quantizer
 
         bias_quantizer, _ = self.__load_quantizer__('int8', qparams)
@@ -350,8 +433,9 @@ class TruncationOpManagerInference:
         bias_quantizer.pcq_a = False
         bias_quantizer.clipping = 'no'
         bias_quantizer.kld = False
-        self.quantizers['bias'] = bias_quantizer
-        # self.quantizers['bias'] = DummyQuantizer()
+        bias_quantizer.bit_alloc = False
+        # self.quantizers['bias'] = bias_quantizer
+        self.quantizers['bias'] = DummyQuantizer()
 
         quantizer_ignored, _ = self.__load_quantizer__('int8', qparams)
         quantizer_ignored.pcq_w = False
@@ -362,12 +446,12 @@ class TruncationOpManagerInference:
         self.quantizers['ignored'] = quantizer_ignored
 
         activation_quantizer, _ = self.__load_quantizer__(qtype, qparams)
-        activation_quantizer.force_positive = fused_relu
+        activation_quantizer.force_positive = self.fused_relu
         activation_quantizer.pcq_w = False
         self.quantizers['activation'] = activation_quantizer
 
         activation_linear_quantizer, _ = self.__load_quantizer__(qtype, qparams)
-        activation_linear_quantizer.force_positive = fused_relu
+        activation_linear_quantizer.force_positive = self.fused_relu
         activation_linear_quantizer.pcq_w = False
         activation_linear_quantizer.pcq_a = False
         activation_linear_quantizer.sm = StatisticManager
@@ -380,6 +464,7 @@ class TruncationOpManagerInference:
         pooling_quantizer.sm = StatisticManager
         pooling_quantizer.clipping = 'no'
         pooling_quantizer.kld = False
+        pooling_quantizer.bit_alloc = False
         self.quantizers['activation_pooling'] = pooling_quantizer
 
     def __init__(self, args, qparams):
@@ -396,6 +481,7 @@ class TruncationOpManagerInference:
         self.rho_act = qparams['qmanager']['rho_act'] if 'qmanager' in qparams else None
         self.rho_weight = qparams['qmanager']['rho_weight'] if 'qmanager' in qparams else None
         self.fp32_clip = self.rho_act is not None or self.rho_weight is not None
+        self.fused_relu = args.arch is not None and (args.arch == 'alexnet' or args.arch == 'vgg16' or args.arch == 'vgg16_bn' or args.arch == 'inception_v3' or 'squeezenet' in args.arch)
 
         if args.qtype is not None:
             self.quantizers = {}
@@ -406,24 +492,11 @@ class TruncationOpManagerInference:
             else:
                 self.__fill_quantizers__(args.qtype, qparams, args.arch, args.qweight)
                 self.quantizer_default, _ = self.__load_quantizer__('int8', qparams)
-
-        if args.measure_stats:
-            self.measure_stats = MS()
-            self.measure_stats.folder = 'results/measure_stats/%s' % args.arch if args.measure_stats_folder is None else args.measure_stats_folder
-            if self.fp32_clip:
-                if self.rho_act is not None:
-                    self.measure_stats.subfolder = 'act_clipping_rho_%f' % self.rho_act
-                if self.rho_weight is not None:
-                    self.measure_stats.subfolder = 'weights_clipping_rho_%f' % self.rho_weight
-            else:
-                self.measure_stats.subfolder = args.qtype
-            self.measure_stats.__enter__()
-        else:
-            self.measure_stats = None
+            self.activations_clipper = StatisticalClipper(self.rho_act)
+            self.weights_clipper = RatioClipper(self.rho_weight)
 
     def __exit__(self, *args):
-        if self.measure_stats is not None:
-            self.measure_stats.__exit__()
+        pass
 
     def get_quantizer(self, tag, tensor=None):
         if tag in self.quantizers:
@@ -465,13 +538,27 @@ class TruncationOpManagerInference:
         fprop = self.activation_quantizer if fprop else None
         return attacher.pytorch_attach(tensor, fprop, None)
 
-    def quantize_instant(self, tensor, tag="", stat_id=None, half_range=False, override_att=None):
+    def quantize_instant(self, tensor, tag="", stat_id=None, half_range=False, override_att=None, verbose=False):
         # ignore quantization of first and last layer
         ignore_cond = False
         if stat_id is not None:
             ignore_cond = np.array([l == stat_id for l in self.ignore_ids]).any()
 
+        # if self.fp32_clip:
+        #     if ignore_cond:
+        #         return self.activations_clipper(tensor, tag, stat_id) if self.rho_act is not None else tensor
+        #     elif (tag == 'activation' or tag == 'activation_classifier' and tensor.shape[1] == 1000) or (tag == 'weight_classifier' and tensor.shape[0] == 1000):
+        #         return tensor  # Last linear layer. No clipping here
+        #     elif tag == 'weight':
+        #         return self.weights_clipper(tensor, tag) if self.rho_weight is not None else tensor
+        #     else:  # bias, pooling etc..
+        #         return tensor
+        # else:
         qtag = 'ignored' if ignore_cond else tag
         q = self.get_quantizer(qtag)
         q.half_range = half_range
+
+        if verbose:
+            print("Quantize {0:21} | Id - {1:18} | {2:} | {3:}".format(tag, str(stat_id), str(q), str(tensor.device)))
+
         return q(tensor, tag, stat_id, override_att)

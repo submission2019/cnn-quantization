@@ -14,11 +14,12 @@ base_dir = os.path.join(home, 'mxt-sim')
 SAVE_FULL_STATS = False
 
 class StatisticManagerPerChannel(metaclass=Singleton):
-    def __init__(self, folder, load_stats, stats = ['max', 'min', 'std', 'mean', 'kurtosis', 'b'], collect_err=True):
+    def __init__(self, folder, load_stats, stats = ['max', 'min', 'std', 'mean', 'kurtosis', 'b', 'std_pos'], batch_avg=False, collect_err=False):
         self.name = folder
         self.folder = os.path.join(base_dir, 'statistics/per_channel', folder)
         self.stats_names = stats
         self.collect_err = collect_err
+        self.batch_avg = batch_avg
         if collect_err:
             self.stats_names.append('mse_lowp')
             self.stats_names.append('mse_gaus')
@@ -40,14 +41,14 @@ class StatisticManagerPerChannel(metaclass=Singleton):
             self.stats = {}
         pass
 
-    def save_tensor_stats(self, tensor, tag, id, tensors_q={}, global_min_max=False):
+    def save_tensor_stats(self, tensor, tag, id, tensors_q={}, force_global_min_max=False):
         # ignore FC or 1x1 case
         if len(tensor.shape) < 3 or (tensor.shape[2] == 1 and tensor.shape[3] == 1):
             return
 
         # Assume activation dimentions [N,C,H,W]
         t = tensor.transpose(0, 1).contiguous()  # [C, N, H, W]
-        t = t.view(t.shape[0], -1) # [C, NxHxW] or [C, N, HxW]
+        t = t.view(t.shape[0], -1) # [C, NxHxW]
 
         mean_ = t.mean(-1)
         std_ = torch.std(t, dim=-1, unbiased=True)
@@ -58,12 +59,23 @@ class StatisticManagerPerChannel(metaclass=Singleton):
                 st = torch.mean(torch.abs(t - mean_.unsqueeze(-1)), dim=-1)
             elif sn == 'std':
                 st = std_
+            elif sn == 'std_pos':
+                t_relu = torch.nn.functional.relu(t)
+                st = torch.std(t_relu, dim=-1, unbiased=True)
             elif sn == 'mean':
                 st = mean_
             elif sn == 'max':
-                st = t.max(-1)[0] #if global_min_max else torch.max(tensor.view(tensor.shape[0], tensor.shape[1], -1).max(dim=-1)[0], dim=0)[0]
+                if force_global_min_max:
+                    st = t.max(-1)[0]
+                else:
+                    st = torch.mean(tensor.view(tensor.shape[0], tensor.shape[1], -1).max(dim=-1)[0], dim=0) \
+                        if self.batch_avg else t.max(-1)[0]
             elif sn == 'min':
-                st = t.min(-1)[0] #if global_min_max else torch.min(tensor.view(tensor.shape[0], tensor.shape[1], -1).min(dim=-1)[0], dim=0)[0]
+                if force_global_min_max:
+                    st = t.min(-1)[0]
+                else:
+                    st = torch.mean(tensor.view(tensor.shape[0], tensor.shape[1], -1).min(dim=-1)[0], dim=0)if self.batch_avg else \
+                        torch.min(tensor.view(tensor.shape[0], tensor.shape[1], -1).min(dim=-1)[0], dim=0)[0]
             elif 'mse' in sn:
                 if len(tensors_q) > 0:
                     t_orig = tensors_q['orig']
