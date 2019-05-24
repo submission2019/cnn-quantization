@@ -7,6 +7,7 @@ from utils.misc import sorted_nicely
 import torch
 from pathlib import Path
 
+
 home = str(Path.home())
 base_dir = os.path.join(home, 'mxt-sim')
 

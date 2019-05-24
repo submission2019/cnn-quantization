@@ -3,7 +3,6 @@ from scipy.stats import entropy
 from tqdm import tqdm
 import numpy as np
 
-
 def get_kld_threshold_15bins(arr):
     min_val, max_val, min_divergence, opt_th = _get_optimal_threshold(arr, num_bins=2001, num_quantized_bins=15)
     return opt_th

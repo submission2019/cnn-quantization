@@ -11,6 +11,7 @@ from pathlib import Path
 home = str(Path.home())
 base_dir = os.path.join(home, 'mxt-sim')
 
+
 class StatisticManager(metaclass=Singleton):
     def __init__(self, folder, load_stats, stats = ['max', 'min', 'std', 'mean', 'kurtosis', 'mean_abs', 'b', 'dim'], batch_avg=False, kld_threshold=False, collect_err=True):
         self.name = folder

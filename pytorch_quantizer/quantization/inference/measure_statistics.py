@@ -6,7 +6,6 @@ import shutil
 from utils.misc import sorted_nicely
 import torch
 
-
 class MeasureStatistics(metaclass=Singleton):
     def __init__(self):
         self.enabled = False

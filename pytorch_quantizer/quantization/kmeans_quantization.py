@@ -11,7 +11,6 @@ from utils.absorb_bn import search_absorbe_bn
 import argparse
 from pathlib import Path
 
-
 def clip1d_kmeans(x, num_bits=8, n_jobs=-1):
     orig_shape = x.shape
     x = np.expand_dims(x.flatten(), -1)

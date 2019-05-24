@@ -8,6 +8,7 @@ import torch
 import pickle
 from pathlib import Path
 
+
 home = str(Path.home())
 base_dir = os.path.join(home, 'mxt-sim')
 

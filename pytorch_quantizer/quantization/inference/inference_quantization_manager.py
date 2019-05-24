@@ -17,6 +17,7 @@ from utils.dump_manager import DumpManager as DM
 from pytorch_quantizer.clipping.clipping_manager import StatisticalClipper, RatioClipper
 from pytorch_quantizer.quantization.qtypes.dummy_quantizer import DummyQuantizer
 
+
 VERBOSE = True
 
 class StatsMode(Enum):

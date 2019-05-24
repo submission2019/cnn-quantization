@@ -7,6 +7,7 @@ from utils.monitor import Monitor
 from pytorch_quantizer.quantization.inference.statistic_manager import StatisticManager
 from pytorch_quantizer.quantization.inference.statistic_manager_perchannel import StatisticManagerPerChannel
 
+
 # Alpha coeficients for for gaussian clipping
 # [1.71063519 2.15159277 2.55913646 2.93620062 3.28691474 3.6151146 3.92403714]
 
