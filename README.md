@@ -66,6 +66,14 @@ Numerical solution source code:
 Given a quota on the total number of bits allowed to be written to memory, the optimal bit width assignment Mi for channel i is the following.<br/>
 ![eq-6](fig/bit_alloc-eq-11.png)
 
+## Bias correction
+We observe an inherent bias in the mean and the variance of the weight values following their quantization.<br/>
+![bias-err](fig/resnet101_bias_err.png)
+We calculate this bias using equation 12.
+![eq-12](fig/bias-corr-eq-12.png)
+Then, we compensate for the bias for each channel of W as follows:
+![eq-13](fig/bias-corr-eq-13.png)
+
 
 ## Quantization with optimal clipping
 In order to quantize tensor to M bit with optimal clipping we use GEMMLOWP quantization with small modification. We replace dynamic range in scale computation by 2*alpha where alpha is optimal clipping value.
