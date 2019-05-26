@@ -61,6 +61,11 @@ We solve eq. 6 numerically to find optimal clipping value &alpha; for both Lapla
 Numerical solution source code: 
 [optimal_alpha.ipynb](optimal_alpha.ipynb)
 
+## Per-channel bit allocation
+
+The optimal bit width assignment Mi for each channel i.<br/>
+![eq-6](fig/bit_alloc-eq-11.png)
+
 
 ## Quantization with optimal clipping
 In order to quantize tensor to M bit with optimal clipping we use GEMMLOWP quantization with small modification. We replace dynamic range in scale computation by 2*alpha where alpha is optimal clipping value.
