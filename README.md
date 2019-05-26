@@ -53,14 +53,14 @@ python inference/inference_sim.py -a resnet50 -b 512 -pcq_w -pcq_a -sh --qtype i
 
 
 
-## Solution for optimal clipping
+## AICQ: Analytical Clipping for Integer Quantization
 
-To find optimal clipping values for the Laplace/Gaussian case, we numerically solve Equations (12)/ (A4)
+We solve eq. 6 numerically to find optimal clipping value &alpha; for both Laplace and Gaussian prior.<br/>
+![eq-6](fig/opt_clipping-eq-6.png)
 
+Numerical solution source code: 
 [optimal_alpha.ipynb](optimal_alpha.ipynb)
 
-<!---Gaussian case, linear dependency--->
-<!---![Gaussian case](figures/opt_alpha_gaussian.png)--->
 
 ## Quantization with optimal clipping
 In order to quantize tensor to M bit with optimal clipping we use GEMMLOWP quantization with small modification. We replace dynamic range in scale computation by 2*alpha where alpha is optimal clipping value.
