@@ -50,7 +50,7 @@ python inference/inference_sim.py -a resnet50 -b 512 -pcq_w -pcq_a -sh --qtype i
 python inference/inference_sim.py -a resnet50 -b 512 -pcq_w -pcq_a -sh --qtype int4 -qw int4 -c laplace -baa -baw -bcw
 ```
 >* Prec@1 73.330 Prec@5 91.334
-
+<br/>
 
 
 ## AICQ: Analytical Clipping for Integer Quantization
@@ -60,19 +60,20 @@ We solve eq. 6 numerically to find optimal clipping value &alpha; for both Lapla
 
 Numerical solution source code:
 [optimal_alpha.ipynb](optimal_alpha.ipynb)
+<br/>
 
 ## Per-channel bit allocation
 
 Given a quota on the total number of bits allowed to be written to memory, the optimal bit width assignment Mi for channel i is the following.<br/>
-![eq-6](fig/bit_alloc-eq-11.png)
+![eq-6](fig/bit_alloc-eq-11.png)<br/>
 
 ## Bias correction
 We observe an inherent bias in the mean and the variance of the weight values following their quantization.<br/>
-![bias-err](fig/resnet101_bias_err.png)
+![bias-err](fig/resnet101_bias_err.png)<br/>
 We calculate this bias using equation 12.<br/>
-![eq-12](fig/bias-corr-eq-12.png)
+![eq-12](fig/bias-corr-eq-12.png)<br/>
 Then, we compensate for the bias for each channel of W as follows:<br/>
-![eq-13](fig/bias-corr-eq-13.png)
+![eq-13](fig/bias-corr-eq-13.png)<br/>
 
 
 ## Quantization with optimal clipping
