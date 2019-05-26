@@ -63,7 +63,7 @@ Numerical solution source code:
 
 ## Per-channel bit allocation
 
-The optimal bit width assignment Mi for each channel i.<br/>
+Given a quota on the total number of bits allowed to be written to memory, the optimal bit width assignment Mi for channel i is the following.<br/>
 ![eq-6](fig/bit_alloc-eq-11.png)
 
 
