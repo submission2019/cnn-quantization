@@ -58,7 +58,7 @@ python inference/inference_sim.py -a resnet50 -b 512 -pcq_w -pcq_a -sh --qtype i
 We solve eq. 6 numerically to find optimal clipping value &alpha; for both Laplace and Gaussian prior.<br/>
 ![eq-6](fig/opt_clipping-eq-6.png)
 
-Numerical solution source code: 
+Numerical solution source code:
 [optimal_alpha.ipynb](optimal_alpha.ipynb)
 
 ## Per-channel bit allocation
@@ -69,9 +69,9 @@ Given a quota on the total number of bits allowed to be written to memory, the o
 ## Bias correction
 We observe an inherent bias in the mean and the variance of the weight values following their quantization.<br/>
 ![bias-err](fig/resnet101_bias_err.png)
-We calculate this bias using equation 12.
+We calculate this bias using equation 12.<br/>
 ![eq-12](fig/bias-corr-eq-12.png)
-Then, we compensate for the bias for each channel of W as follows:
+Then, we compensate for the bias for each channel of W as follows:<br/>
 ![eq-13](fig/bias-corr-eq-13.png)
 
 
