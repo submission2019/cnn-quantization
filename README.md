@@ -8,10 +8,6 @@
 - [bokeh](<http://bokeh.pydata.org>) for training visualization
 - [scikit-learn](https://scikit-learn.org) for kmeans clustering
 - [mlflow](https://mlflow.org/) for logging
-To install requirements run:
-```
-pip install torch torchvision bokeh pandas sklearn mlflow
-```
 
 ## HW requirements
 NVIDIA GPU / cuda support
