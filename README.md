@@ -8,6 +8,8 @@
 - [bokeh](<http://bokeh.pydata.org>) for training visualization
 - [scikit-learn](https://scikit-learn.org) for kmeans clustering
 - [mlflow](https://mlflow.org/) for logging
+- [tqdm](https://tqdm.github.io/) for progress
+
 
 ## HW requirements
 NVIDIA GPU / cuda support
