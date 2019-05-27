@@ -91,4 +91,4 @@ Then, we compensate for the bias for each channel of W as follows:<br/>
 We use GEMMLOWP quantization scheme described [here](https://github.com/google/gemmlowp/blob/master/doc/quantization.md).
 We implemented above quantization scheme in pytorch. We optimize this scheme by applying ACIQ to reduce range and optimally allocate bits for each channel.
 
-Quantization code can be found in: [int_quantizer.py](pytorch_quantizer/quantization/qtypes/int_quantizer.py)
+Quantization code can be found in [int_quantizer.py](pytorch_quantizer/quantization/qtypes/int_quantizer.py)
