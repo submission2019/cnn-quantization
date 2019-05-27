@@ -43,6 +43,7 @@ To improve performance GEMMLOWP quantization was implemented in cuda and require
 ```
 cd kernels
 ./build_all.sh
+cd ../
 ```
 
 ### Run inference experiments
