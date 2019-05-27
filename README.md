@@ -21,14 +21,24 @@ NVIDIA GPU / cuda support
 - Configure your dataset path by providing --data "PATH_TO_ILSVRC" or copy ILSVRC dir to ~/datasets/ILSVRC2012.
 - To get the ILSVRC2012 data, you should register on their site for access: <http://www.image-net.org/>
 
-## Building cuda kernels for GEMMLOWP
-To improve performance GEMMLOWP quantization was implemented in cuda and requires to compile kernels.
-
+## Prepare environment
+- Clone source code
+```
+git clone https://github.com/submission2019/cnn-quantization.git
+```
+- Install dependencies
+```
+pip install torch torchvision bokeh pandas sklearn mlflow
+```
 - Create virtual environment for python3 and activate:
 ```
 virtualenv --system-site-packages -p python3 venv3
 . ./venv3/bin/activate
 ```
+
+
+## Building cuda kernels for GEMMLOWP
+To improve performance GEMMLOWP quantization was implemented in cuda and requires to compile kernels.
 - build kernels
 ```
 cd kernels
