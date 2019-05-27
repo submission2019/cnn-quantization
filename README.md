@@ -75,6 +75,7 @@ Numerical solution source code:
 
 Given a quota on the total number of bits allowed to be written to memory, the optimal bit width assignment Mi for channel i is the following.<br/>
 ![eq-6](fig/bit_alloc-eq-11.png)<br/>
+[bit_allocation_synthetic.py](bit_allocation_synthetic.py)<br/>
 
 ## Bias correction
 We observe an inherent bias in the mean and the variance of the weight values following their quantization.<br/>
