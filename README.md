@@ -78,6 +78,7 @@ Given a quota on the total number of bits allowed to be written to memory, the o
 
 ## Bias correction
 We observe an inherent bias in the mean and the variance of the weight values following their quantization.<br/>
+[bias_correction.ipynb](bias_correction.ipynb)<br/>
 ![bias-err](fig/resnet101_bias_err.png)<br/>
 We calculate this bias using equation 12.<br/>
 ![eq-12](fig/bias-corr-eq-12.png)<br/>
