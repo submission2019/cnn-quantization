@@ -68,7 +68,7 @@ We solve eq. 6 numerically to find optimal clipping value &alpha; for both Lapla
 ![eq-6](fig/opt_clipping-eq-6.png)
 
 Numerical solution source code:
-[optimal_alpha.ipynb](optimal_alpha.ipynb)
+[mse_analysis.py](mse_analysis.py)
 <br/>
 
 ## Per-channel bit allocation
