@@ -26,16 +26,15 @@ NVIDIA GPU / cuda support
 ```
 git clone https://github.com/submission2019/cnn-quantization.git
 ```
-- Install dependencies
-```
-pip install torch torchvision bokeh pandas sklearn mlflow
-```
 - Create virtual environment for python3 and activate:
 ```
 virtualenv --system-site-packages -p python3 venv3
 . ./venv3/bin/activate
 ```
-
+- Install dependencies
+```
+pip install torch torchvision bokeh pandas sklearn mlflow
+```
 
 ## Building cuda kernels for GEMMLOWP
 To improve performance GEMMLOWP quantization was implemented in cuda and requires to compile kernels.
