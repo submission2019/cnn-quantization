@@ -30,7 +30,7 @@ virtualenv --system-site-packages -p python3 venv3
 ```
 - Install dependencies
 ```
-pip install torch torchvision bokeh pandas sklearn mlflow
+pip install torch torchvision bokeh pandas sklearn mlflow tqdm
 ```
 
 ## Building cuda kernels for GEMMLOWP
