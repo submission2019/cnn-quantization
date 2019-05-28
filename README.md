@@ -71,6 +71,7 @@ Solving eq. 6 numerically for bit-widths 2,3,4 results with optimal clipping val
 
 Numerical solution source code:
 [mse_analysis.py](mse_analysis.py)
+![aciq-mse](fig/aciq-mse.png)<br/>
 <br/>
 
 ## Per-channel bit allocation
@@ -78,6 +79,8 @@ Numerical solution source code:
 Given a quota on the total number of bits allowed to be written to memory, the optimal bit width assignment Mi for channel i is the following.<br/>
 ![eq-6](fig/bit_alloc-eq-11.png)<br/>
 [bit_allocation_synthetic.py](bit_allocation_synthetic.py)<br/>
+![bit-alloc](fig/bit-alloc-mse.png)<br/>
+<br/>
 
 ## Bias correction
 We observe an inherent bias in the mean and the variance of the weight values following their quantization.<br/>
@@ -87,6 +90,7 @@ We calculate this bias using equation 12.<br/>
 ![eq-12](fig/bias-corr-eq-12.png)<br/>
 Then, we compensate for the bias for each channel of W as follows:<br/>
 ![eq-13](fig/bias-corr-eq-13.png)<br/>
+<br/>
 
 
 ## Quantization
@@ -94,3 +98,4 @@ We use GEMMLOWP quantization scheme described [here](https://github.com/google/g
 We implemented above quantization scheme in pytorch. We optimize this scheme by applying ACIQ to reduce range and optimally allocate bits for each channel.
 
 Quantization code can be found in [int_quantizer.py](pytorch_quantizer/quantization/qtypes/int_quantizer.py)
+<br/>
