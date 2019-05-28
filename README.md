@@ -63,7 +63,7 @@ python inference/inference_sim.py -a resnet50 -b 512 -pcq_w -pcq_a -sh --qtype i
 ![experiments](fig/experiments.png)
 <br/>
 
-## AICQ: Analytical Clipping for Integer Quantization
+## ACIQ: Analytical Clipping for Integer Quantization
 
 We solve eq. 6 numerically to find optimal clipping value &alpha; for both Laplace and Gaussian prior.<br/>
 ![eq-6](fig/opt_clipping-eq-6.png)
