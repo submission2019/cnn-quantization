@@ -59,8 +59,9 @@ python inference/inference_sim.py -a resnet50 -b 512 -pcq_w -pcq_a -sh --qtype i
 python inference/inference_sim.py -a resnet50 -b 512 -pcq_w -pcq_a -sh --qtype int4 -qw int4 -c laplace -baa -baw -bcw
 ```
 >* Prec@1 73.330 Prec@5 91.334
-<br/>
 
+![experiments](fig/experiments.png)
+<br/>
 
 ## AICQ: Analytical Clipping for Integer Quantization
 
