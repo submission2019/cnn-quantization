@@ -60,23 +60,23 @@ def LaplacianClippingSimulation(Alpha, b, bitWidth):
 
 
 if __name__ == "__main__":
-    Alpha = np.arange(0, 15, 0.1)
+    Alpha = np.arange(6, 15, 0.1)
 
     #Experiment parameters
     bitWidth = 4
     sigma = 2  # standard deviation
 
     #Gauss
-    simulation  = GaussianClippingSimulation(Alpha,sigma,bitWidth)
-    analysis = GaussianClippingAnalysis(Alpha, sigma, bitWidth)
+    # simulation  = GaussianClippingSimulation(Alpha,sigma,bitWidth)
+    # analysis = GaussianClippingAnalysis(Alpha, sigma, bitWidth)
 
     #Laplace
-    # simulation = LaplacianClippingSimulation(Alpha, sigma, bitWidth)
-    # analysis = LaplacianClippingAnalysis(Alpha, sigma, bitWidth)
+    simulation = LaplacianClippingSimulation(Alpha, sigma, bitWidth)
+    analysis = LaplacianClippingAnalysis(Alpha, sigma, bitWidth)
 
 
-    plt.plot(Alpha,simulation,'b', linewidth=3)
-    plt.plot(Alpha,analysis,'r', linewidth=3)
+    plt.plot(Alpha,simulation,'b', linewidth=5)
+    plt.plot(Alpha,analysis,'r', linewidth=2)
     plt.legend(('simulation', 'analysis')); plt.ylabel('Mean Square Error', size=20) ; plt.xlabel('Clipping Value', size=20)
     plt.title('Bit Width='+ str(bitWidth), size=20)
     plt.show()
