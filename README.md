@@ -68,7 +68,7 @@ python inference/inference_sim.py -a resnet50 -b 512 -pcq_w -pcq_a -sh --qtype i
 We solve eq. 6 numerically to find optimal clipping value &alpha; for both Laplace and Gaussian prior.<br/>
 ![eq-6](fig/opt_clipping-eq-6.png)
 
-Solving eq. 6 numerically for bit-widths 2,3,4 results with optimal clipping values of 2.83*b, 3.86*b, 5.03*b respectively. Where b is deviation from expected value of the activation.
+Solving eq. 6 numerically for bit-widths 2,3,4 results with optimal clipping values of 2.83*b, 3.86*b, 5.03*b respectively, where b is deviation from expected value of the activation.
 
 Numerical solution source code:
 [mse_analysis.py](mse_analysis.py)
