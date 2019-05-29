@@ -60,7 +60,7 @@ def LaplacianClippingSimulation(Alpha, b, bitWidth):
 
 
 if __name__ == "__main__":
-    Alpha = np.arange(6, 15, 0.1)
+    Alpha = np.arange(5, 20, 0.1)
 
     #Experiment parameters
     bitWidth = 4
