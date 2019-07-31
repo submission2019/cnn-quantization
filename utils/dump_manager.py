@@ -6,7 +6,6 @@ import os
 import shutil
 import uuid
 
-
 class DumpManager(metaclass=Singleton):
     def __init__(self, dump_dir=None):
         if dump_dir is None:

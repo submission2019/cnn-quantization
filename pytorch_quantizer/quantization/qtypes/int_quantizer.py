@@ -6,7 +6,8 @@ import math
 from utils.monitor import Monitor
 from pytorch_quantizer.quantization.inference.statistic_manager import StatisticManager
 from pytorch_quantizer.quantization.inference.statistic_manager_perchannel import StatisticManagerPerChannel
-
+from utils.entropy import shannon_entropy, most_requent_value_compression
+import scipy.optimize as opt
 
 # Alpha coeficients for for gaussian clipping
 # [1.71063519 2.15159277 2.55913646 2.93620062 3.28691474 3.6151146 3.92403714]
@@ -29,7 +30,29 @@ def to_numpy(tensor):
     else:
         return tensor
 
+
+def laplace_prior_mse(b, alpha, omega):
+    return 2 * (b ** 2) * np.exp(-alpha / b) + (alpha ** 2 / (3 * omega**2))
+
+def half_laplace_prior_mse(b, alpha, omega):
+    return (b ** 2) * np.exp(-alpha / b) + (alpha ** 2 / (24 * omega**2))
+
+# Numpy code to find optimal alpha for real omega
+resolution = 20
+omega_table = np.concatenate([np.linspace(0.01, 0.1, resolution, endpoint=False),
+                             np.linspace(0.1, 1, resolution, endpoint=False),
+                             np.linspace(1, 10, resolution, endpoint=False),
+                             np.linspace(10, 100, resolution, endpoint=False),
+                             np.linspace(100, 1000, resolution, endpoint=False)])
+
+alpha_table = np.array([opt.minimize_scalar(lambda x: laplace_prior_mse(b=1, alpha=x, omega=w)).x for w in omega_table])
+alpha_table = np.concatenate([[0], alpha_table])
+
+omega_table = np.concatenate([[0], omega_table])
+
 count = 0
+
+
 class IntQuantizer(Function):
     def __init__(self, size, params):
         self.num_bits = size
@@ -49,19 +72,23 @@ class IntQuantizer(Function):
         self.vcorr_weight = params['vcorr_weight']
         self.bit_alloc_round = params['bit_alloc_rmode'] == 'round'
         self.bit_alloc_prior = params['bit_alloc_prior']
+        self.bit_alloc_target_act = params['bit_alloc_target_act'] if params['bit_alloc_target_act'] is not None else self.num_bits
+        self.bit_alloc_target_weight = params['bit_alloc_target_weight'] if params['bit_alloc_target_weight'] is not None else self.num_bits
+        self.measure_entropy = params['measure_entropy']
+        self.logger = params['logger']
 
-        self.alpha_gaus = {1 : 1.24, 2: 1.71, 3: 2.15, 4: 2.55, 5: 2.93, 6: 3.28, 7: 3.61, 8: 3.92}
-        self.alpha_gaus_positive = {1 : 1.71, 2: 2.15, 3: 2.55, 4: 2.93, 5: 3.28, 6: 3.61, 7: 3.92, 8: 4.2}
+        self.alpha_gaus = {1: 1.24, 2: 1.71, 3: 2.15, 4: 2.55, 5: 2.93, 6: 3.28, 7: 3.61, 8: 3.92}
+        self.alpha_gaus_positive = {1: 1.71, 2: 2.15, 3: 2.55, 4: 2.93, 5: 3.28, 6: 3.61, 7: 3.92, 8: 4.2}
 
-        self.alpha_laplace = {0 : 1.05, 1 : 1.86, 2: 2.83, 3: 3.89, 4: 5.03, 5: 6.2, 6: 7.41, 7: 8.64, 8: 9.89}
-        self.alpha_laplace_positive = {0 : 1.86, 1 : 2.83, 2: 3.89, 3: 5.02, 4: 6.2, 5: 7.41, 6: 8.64, 7: 9.89, 8: 11.16}
+        self.alpha_laplace = {0: 1.05, 1: 1.86, 2: 2.83, 3: 3.89, 4: 5.03, 5: 6.2, 6: 7.41, 7: 8.64, 8: 9.89}
+        self.alpha_laplace_positive = {0: 1.86, 1: 2.83, 2: 3.89, 3: 5.02, 4: 6.2, 5: 7.41, 6: 8.64, 7: 9.89, 8: 11.16}
 
         self.gaussian_const = (0.5 * 0.35) * (1 + (math.pi * math.log(4)) ** 0.5)
         self.sm = StatisticManagerPerChannel if params['pcq_act'] else StatisticManager
         self.force_positive = False
         self.half_range = False
 
-    def __call__(self, tensor, tag="", stat_id=None, override_att=None):
+    def __call__(self, tensor, id, tag="", stat_id=None, override_att=None):
         if override_att is not None:
             orig_att = getattr(self, override_att[0])
             setattr(self, override_att[0], override_att[1])
@@ -69,13 +96,17 @@ class IntQuantizer(Function):
             res = self.gemmlowpKldQuantize(tensor, tag, stat_id=stat_id)
         elif self.clipping != 'no':
             # print("clipping %s: %d" % (tag, self.num_bits))
-            res = self.gemmlowpClippingQuantize(tensor, tag, stat_id=stat_id, clip_type=self.clipping)
+            # TODO: select between mid-tread and gemmlowp by cmd flag
+            res = self.gemmlowpClippingQuantize(tensor, id, tag, stat_id=stat_id, clip_type=self.clipping)
+            # res = self.mid_tread_quantize_activation(tensor, id)
         elif self.pcq_w:
             # print("pcq_w %s: %d" % (tag, self.num_bits))
-            res = self.gemmlowpQuantizeWeightsPerChannel(tensor)
+            res = self.gemmlowpQuantizeWeightsPerChannel(tensor, id)
+            # res = self.mid_tread_quantize_weights_per_channel(tensor, id)
         elif self.pcq_a and len(tensor.shape) > 3 and (tensor.shape[2] > 1 or tensor.shape[3] > 1):
             # print("pcq_a %s: %d" % (tag, self.num_bits))
-            res = self.gemmlowpQuantizeActivationPerChannel(tensor, tag, stat_id=stat_id)
+            res = self.gemmlowpQuantizeActivationPerChannel(tensor, id, tag, stat_id=stat_id)
+            # res = self.mid_tread_quantize_activation_per_channel(tensor, id)
         else:
             # print("no clipping %s: %d" % (tag, self.num_bits))
             res = self.gemmlowpMinMaxQuantize(tensor, tag, stat_id=stat_id)
@@ -85,8 +116,107 @@ class IntQuantizer(Function):
         return res
 
     def __repr__(self):
-        return 'IntQuantizer - [bits: {}, clipping: {}, bit_alloc_act: {}, bit_alloc_weight: {}, pcq_w: {}, pcq_a: {}, bcorr_act: {}, bcorr_weight: {}, vcorr_weight: {}, kind: {}]'\
-            .format(self.num_bits, self.clipping, self.bit_alloc_act, self.bit_alloc_weight, self.pcq_w, self.pcq_a, self.bcorr_act, self.bcorr_weight, self.vcorr_weight, self.stats_kind)
+        return 'IntQuantizer - [bits: {}, clipping: {}, bit_alloc_act: {}, bit_alloc_weight: {}, bit_alloc_round: {}, pcq_w: {}, pcq_a: {}, bcorr_act: {}, bcorr_weight: {}, vcorr_weight: {}, kind: {}]'\
+            .format(self.num_bits, self.clipping, self.bit_alloc_act, self.bit_alloc_weight, self.bit_alloc_round, self.pcq_w, self.pcq_a, self.bcorr_act, self.bcorr_weight, self.vcorr_weight, self.stats_kind)
+
+    @staticmethod
+    def get_omega(sigma, target_bins):
+        B = len(sigma) * target_bins
+
+        # Calculate bit allocation
+        p = sigma ** (2./3)
+        omega = (B * p) / p.sum()
+        return omega
+
+    @staticmethod
+    def get_alpha_mult(omega, sym=True):
+        omega = omega.cpu().numpy()
+        if not sym:
+            omega *= 2
+        i = omega_table.searchsorted(omega)
+        inc = (alpha_table[i] - alpha_table[i - 1]) / (omega_table[i] - omega_table[i - 1])
+        alpha = alpha_table[i] - inc * (omega_table[i] - omega)
+        return alpha
+
+    def mid_tread_quantize_weights_per_channel(self, tensor, id):
+        # Assume weights with dimensions [OFM,IFM,K1,K2]
+        t = tensor.view(tensor.shape[0], -1)
+
+        tq, entropy = self.mid_tread_quantization(t, id, self.bit_alloc_target_weight, clip=False, sym=True)
+        if entropy is not None and self.logger is not None:
+            self.logger.log_metric(id + '.entropy', entropy.item(), step='auto', meterId='avg.entropy.weight',
+                                   weight=tq.numel())
+
+        return tq.view(tensor.shape)
+
+    def mid_tread_quantize_activation(self, tensor, id):
+        # Assume [N, C, H, W] or [N, M]
+        if self.pcq_a and len(tensor.shape) > 3 and (tensor.shape[2] > 1 or tensor.shape[3] > 1):
+            # scale per channel
+            out = self.mid_tread_quantize_activation_per_channel(tensor, id)
+        else:
+            # scale per tensor
+            symmetric = not (self.force_positive or self.half_range)
+            out, entropy = self.mid_tread_quantization(tensor.view(1, -1), id, self.bit_alloc_target_act, clip=True, sym=symmetric)
+
+        return out.view(tensor.shape)
+
+    def mid_tread_quantize_activation_per_channel(self, tensor, id):
+        N, C, H, W = tensor.shape  # N x C x H x W
+        t = tensor.detach().transpose(0, 1).contiguous()  # C x N x H x W
+        t = t.view(t.shape[0], -1)
+
+        symmetric = not (self.force_positive or self.half_range)
+        tq, entropy = self.mid_tread_quantization(t, id, self.bit_alloc_target_act, clip=True, sym=symmetric)
+
+        if entropy is not None and self.logger is not None:
+            self.logger.log_metric(id + '.entropy', entropy.item(), step='auto', meterId='avg.entropy.act',
+                                   weight=tensor.numel())
+
+        output = tq.view(C, N, H, W).transpose(0, 1).contiguous()  # N x C x H x W
+        return output.view(tensor.shape)
+
+    def mid_tread_quantization(self, tensor, id, target, clip=False, sym=True):
+        std = tensor.std(-1)
+        omega = self.get_omega(std, target_bins=(2**target)).round()
+
+        if clip:
+            alpha_mult = tensor.new_tensor(self.get_alpha_mult(omega, sym=sym))
+            mu = tensor.mean(dim=-1)
+            b = torch.mean(torch.abs(tensor - mu.unsqueeze(-1)), dim=-1)
+
+            rng = (2 * alpha_mult * b) if sym else (torch.max(mu, mu.new_tensor([0.])) + alpha_mult * b)
+        else:
+            rng = (tensor.max(-1)[0] - tensor.min(-1)[0]) if sym else tensor.max(-1)[0]
+
+        Delta = torch.where(omega > 0, rng / omega,
+                            tensor.new_tensor([np.finfo(np.float32).max]))
+
+        # quantize
+        out = tensor / Delta.unsqueeze(-1)
+        out.round_()
+
+        # clamp
+        if clip:
+            # Centralize quantization range around mean and make it non-negative for asymetric case
+            mu_q = mu / Delta if sym else torch.max(mu, mu.new_tensor([0.])) / Delta
+            c_max = mu_q + (omega / 2 if sym else omega)
+            c_min = ((mu_q - omega / 2) if sym else tensor.new_tensor([0]))
+
+            # In practice all the parameters Delta, omega, c_max, c_min can be pre-calculated based on statistics
+            out = torch.min(out, c_max.unsqueeze(-1))
+            out = torch.max(out, c_min.unsqueeze(-1))
+
+        if self.measure_entropy:
+            entropy = shannon_entropy(out, handle_negative=True)
+            # workaround for out of memory issue
+            torch.cuda.empty_cache()
+        else:
+            entropy = None
+
+        # dequantize
+        out.mul_(Delta.unsqueeze(-1))
+        return out, entropy
 
     def get_alpha_laplace(self, tensor, stat_id=None, kind='mean', per_channel=False):
         if stat_id is not None:
@@ -107,13 +237,14 @@ class IntQuantizer(Function):
                     std = self.__act_stats_perchannel__(tensor, [prior], avg_over_batch=False)[prior]
                 else:
                     std = self.__act_stats__(tensor, [prior], avg_over_batch=False)[prior]
-            bit_alloc = self.get_bits_alloc(std, self.num_bits, self.bit_alloc_round)
+
+            bit_alloc = self.get_bits_alloc_fixed_target(std, self.bit_alloc_target_act, self.bit_alloc_round)
             aciq_factor = np.array([(self.alpha_laplace_positive[nbit.item()] if (self.force_positive or self.half_range) else self.alpha_laplace[nbit.item()]) for nbit in bit_alloc])
             aciq_factor = to_cuda(aciq_factor, tensor.device)
         else:
             aciq_factor = (self.alpha_laplace_positive[self.num_bits] if (self.force_positive or self.half_range) else self.alpha_laplace[self.num_bits])
 
-        return b * aciq_factor
+        return to_cuda(b, tensor.device) * aciq_factor
 
     def get_alpha_gaus(self, tensor, tag, stat_id=None, per_channel=False):
         if stat_id is not None:
@@ -125,6 +256,17 @@ class IntQuantizer(Function):
                 std = self.__act_stats__(tensor, ['std'], avg_over_batch=False)['std']
 
         return std * (self.alpha_gaus_positive[self.num_bits] if (self.force_positive or self.half_range) else self.alpha_gaus[self.num_bits])
+
+    def get_alpha_pstd(self, tensor, p, tag, stat_id=None, per_channel=False):
+        if stat_id is not None:
+            std = self.sm().get_tensor_stat(stat_id, 'std', 'mean')
+        else:
+            if per_channel:
+                std = self.__act_stats_perchannel__(tensor, ['std'], avg_over_batch=False)['std']
+            else:
+                std = self.__act_stats__(tensor, ['std'], avg_over_batch=False)['std']
+
+        return p * std
 
     def get_alpha_exp(self, tensor, stat_id=None, per_channel=False):
         if stat_id is not None:
@@ -156,6 +298,9 @@ class IntQuantizer(Function):
             alpha = self.get_alpha_laplace(tensor, stat_id, per_channel=per_channel)  # laplace clipping
         elif clip_type == 'gaus':
             alpha = self.get_alpha_gaus(tensor, tag, stat_id, per_channel=per_channel)  # gaussian clipping
+        elif 'std' in clip_type:
+            p = float(clip_type.replace('std', ''))
+            alpha = self.get_alpha_pstd(tensor, p, tag, stat_id, per_channel=per_channel)  # 2std clipping
         elif clip_type == 'mix':
             mse_laplace = self.sm().get_tensor_stat(stat_id, 'mse_laplace', 'mean')
             mse_gaus = self.sm().get_tensor_stat(stat_id, 'mse_gaus', 'mean')
@@ -173,8 +318,7 @@ class IntQuantizer(Function):
 
         return alpha
 
-
-    def gemmlowpClippingQuantize(self, tensor, tag="", stat_id=None, clip_type='laplace'):
+    def gemmlowpClippingQuantize(self, tensor, id, tag="", stat_id=None, clip_type='laplace'):
         if stat_id is not None:
             min_value = self.sm().get_tensor_stat(stat_id, 'min', 'mean')
             max_value = self.sm().get_tensor_stat(stat_id, 'max', 'mean')
@@ -199,7 +343,7 @@ class IntQuantizer(Function):
             min_value = to_cuda(min_value, tensor.device)
             range = to_cuda(range, tensor.device)
             max_ = min_value + range
-            res = self.gemmlowpQuantizeActivationPerChannel(tensor.contiguous(), tag, stat_id, min_=min_value, max_=max_)
+            res = self.gemmlowpQuantizeActivationPerChannel(tensor.contiguous(), id, tag, stat_id, min_=min_value, max_=max_)
         else:
             alpha = self.get_alpha(tensor, tag, stat_id, clip_type, per_channel=False)
             max_value = float(max_value); min_value = float(min_value); mean = float(mean); alpha = float(alpha)
@@ -230,17 +374,33 @@ class IntQuantizer(Function):
 
     @staticmethod
     def get_bits_alloc(alpha, num_bits, round=False):
-        # Quota assuming 4 bit target
         B = len(alpha) * 2 ** num_bits
 
         # Calculate bit allocation
-        p = alpha ** (2 / 3)
+        p = alpha ** (2. / 3)
         bin_alloc = (B * p) / p.sum()
-        bin_alloc[bin_alloc < 1] = 2
         bit_alloc = torch.round(torch.log2(bin_alloc)) if round else torch.ceil(torch.log2(bin_alloc))
+        bit_alloc[bit_alloc < 0] = 0
+        bit_alloc[bit_alloc > 8] = 8
         return bit_alloc
 
-    def gemmlowpQuantizeActivationPerChannel(self, tensor, tag="", stat_id=None, min_=None, max_=None):
+    @staticmethod
+    def get_bits_alloc_fixed_target(alpha, num_bits, round=False):
+        eps = 0.01
+        goal_bits = num_bits
+        target_bits = goal_bits
+        delta = 1.
+        iter = 0
+        max_iter = 10
+        while abs(2 * delta) > eps and iter < max_iter:
+            iter += 1
+            bit_alloc = IntQuantizer.get_bits_alloc(alpha, num_bits=target_bits, round=round)
+            delta = (goal_bits - bit_alloc.mean()) / 2
+            target_bits += delta.item()
+
+        return bit_alloc
+
+    def gemmlowpQuantizeActivationPerChannel(self, tensor, id, tag="", stat_id=None, min_=None, max_=None):
         if min_ is None:
             if self.force_positive or self.half_range:
                 min_ = 0  # np.zeros(min_.shape)
@@ -269,15 +429,22 @@ class IntQuantizer(Function):
             else:
                 alpha = self.__act_stats_perchannel__(tensor, [prior], avg_over_batch=False)[prior]
 
-            bit_alloc = self.get_bits_alloc(alpha, self.num_bits, self.bit_alloc_round)
+            bit_alloc = self.get_bits_alloc_fixed_target(alpha, self.bit_alloc_target_act, self.bit_alloc_round)
         else:
             bit_alloc = None
 
-        output = self.__gemmlowpQuantize1__(t, max_ - min_, min_, bit_alloc=bit_alloc)
+        if self.measure_entropy:
+            output, entropy = self.__gemmlowpQuantize1__(t, max_ - min_, min_, bit_alloc=bit_alloc, measure_entropy=True)
+            if self.logger is not None:
+                self.logger.log_metric(id + '.entropy', entropy.item(), step='auto', meterId='avg.entropy.act', weight=output.numel())
+        else:
+            output = self.__gemmlowpQuantize1__(t, max_ - min_, min_, bit_alloc=bit_alloc,
+                                                         measure_entropy=self.measure_entropy)
+
         output = output.view(C, N, H, W).transpose(0, 1).contiguous()  # N x C x H x W
         return output.view(tensor.shape)
 
-    def gemmlowpQuantizeWeightsPerChannel(self, tensor, min_=None, max_=None):
+    def gemmlowpQuantizeWeightsPerChannel(self, tensor, id, min_=None, max_=None):
         # Assume weights with dimensions [OFM,IFM,K1,K2]
         t = tensor.view(tensor.shape[0], -1)
 
@@ -289,11 +456,16 @@ class IntQuantizer(Function):
 
         if self.bit_alloc_weight and self.num_bits <= 4:
             alpha = t.std(-1)
-            bit_alloc = self.get_bits_alloc(alpha, self.num_bits, self.bit_alloc_round)
+            bit_alloc = self.get_bits_alloc_fixed_target(alpha, self.bit_alloc_target_weight, self.bit_alloc_round)
         else:
             bit_alloc = None
 
-        output = self.__gemmlowpQuantize1__(t, max_ - min_, min_, bit_alloc=bit_alloc)
+        if self.measure_entropy:
+            output, entropy = self.__gemmlowpQuantize1__(t, max_ - min_, min_, bit_alloc=bit_alloc, measure_entropy=True)
+            if self.logger is not None:
+                self.logger.log_metric(id + '.entropy', entropy.item(), step='auto', meterId='avg.entropy.weight', weight=output.numel())
+        else:
+            output = self.__gemmlowpQuantize1__(t, max_ - min_, min_, bit_alloc=bit_alloc)
 
         return output.view(tensor.shape)
 
@@ -307,25 +479,24 @@ class IntQuantizer(Function):
 
         return self.__gemmlowpQuantize__(tensor, range, offset)
 
-
     def symlowpQuantize(self, tensor):
         maxabs = torch.max(tensor.detach().abs())
         return self.__symlowpQuantize__(tensor, maxabs)
 
-    @staticmethod
-    def mse_laplace(b, alpha, num_bits):
-        return 2 * (b ** 2) * np.exp(-alpha / b) + ((alpha ** 2) / (3 * 2 ** (2 * num_bits)))
-
-    @staticmethod
-    def mse_exponential(mean_abs, alpha, num_bits):
-        return 2 * (mean_abs ** 2) * np.exp(-alpha / mean_abs) + ((alpha ** 2) / (3 * 2 ** (2 * num_bits)))
-
-    @staticmethod
-    def mse_gaus(sigma, alpha, num_bits):
-        clipping_err = (sigma ** 2 + (alpha ** 2)) * (1 - math.erf(alpha / (sigma * np.sqrt(2.0)))) - \
-                       np.sqrt(2.0 / np.pi) * alpha * sigma * (np.e ** ((-1) * (0.5 * (alpha ** 2)) / sigma ** 2))
-        quant_err = (alpha ** 2) / (3 * (2 ** (2 * num_bits)))
-        return clipping_err + quant_err
+    # @staticmethod
+    # def mse_laplace(b, alpha, num_bits):
+    #     return 2 * (b ** 2) * np.exp(-alpha / b) + ((alpha ** 2) / (3 * 2 ** (2 * num_bits)))
+    #
+    # @staticmethod
+    # def mse_exponential(mean_abs, alpha, num_bits):
+    #     return 2 * (mean_abs ** 2) * np.exp(-alpha / mean_abs) + ((alpha ** 2) / (3 * 2 ** (2 * num_bits)))
+    #
+    # @staticmethod
+    # def mse_gaus(sigma, alpha, num_bits):
+    #     clipping_err = (sigma ** 2 + (alpha ** 2)) * (1 - math.erf(alpha / (sigma * np.sqrt(2.0)))) - \
+    #                    np.sqrt(2.0 / np.pi) * alpha * sigma * (np.e ** ((-1) * (0.5 * (alpha ** 2)) / sigma ** 2))
+    #     quant_err = (alpha ** 2) / (3 * (2 ** (2 * num_bits)))
+    #     return clipping_err + quant_err
 
     @staticmethod
     def __act_stats__(tensor, stats, avg_over_batch=False):
@@ -377,36 +548,16 @@ class IntQuantizer(Function):
 
         return stats_dict
 
-    def __clip_and_mse_mesure(self, tensor, tag, stat_id, clip_type, max_value, min_value, mean, std, b):
-        if clip_type == 'laplace':
-            alpha = self.get_alpha_laplace(tensor, stat_id)  # laplace clipping
-            mse_est = IntQuantizer.mse_laplace(b, alpha, self.num_bits)
-        elif clip_type == 'gaus':
-            alpha = self.get_alpha_gaus(tensor, tag, stat_id)  # gaussian clipping
-            mse_est = IntQuantizer.mse_gaus(std, alpha, self.num_bits)
-        elif clip_type == 'exp':
-            alpha = self.get_alpha_exp(tensor, stat_id)  # exponential clipping
-            mse_est = -1
-        else: # no clipping
-            alpha = (max_value - min_value)/2
-            mse_est = -1
-
-        delta, min_value = self.alpha2DeltaOffset(alpha, max_value, min_value, mean)
-        res = self.__gemmlowpQuantize__(tensor.contiguous(), delta, min_value)
-        mse = torch.mean((tensor - res)**2)
-        del res
-        return mse, mse_est
-
-    def __gemmlowpQuantize1__(self, tensor, delta, offset, bit_alloc=None):
+    def __gemmlowpQuantize1__(self, tensor, delta, offset, bit_alloc=None, measure_entropy=False):
         qmin = 0.
         if bit_alloc is None:
             qmax = 2.**self.num_bits - 1.
+            scale = (delta) / (qmax - qmin)
         else:
             qmax = 2.**bit_alloc - 1.
-        #import pdb; pdb.set_trace()
-        scale = (delta) / (qmax - qmin)
+            scale = torch.where(qmax > 0, (delta) / (qmax - qmin), torch.tensor([0.]).to(tensor.device))
 
-        scale = torch.max(scale, torch.tensor([1e-8]).to(scale.device))
+        scale = torch.max(scale, torch.tensor([1e-8]).to(tensor.device))
 
         output = tensor.detach()
         if self.enforce_true_zero:
@@ -426,6 +577,10 @@ class IntQuantizer(Function):
             output = torch.where(output.gt(qmax), qmax, output)
             output.clamp_(qmin).round_()
 
+        if measure_entropy:
+            entropy = shannon_entropy(output.int())
+            # entropy = most_requent_value_compression(output.int())
+
         if self.enforce_true_zero:
             output = torch.add(output, -zero_point.unsqueeze(-1))
             output = torch.mul(output, scale.unsqueeze(-1))  # dequantize
@@ -433,7 +588,13 @@ class IntQuantizer(Function):
             output = torch.mul(output, scale.unsqueeze(-1))
             output = torch.add(output, offset.unsqueeze(-1))  # dequantize
 
-        return output.view(tensor.shape)
+        # workaround for out of memory issue
+        torch.cuda.empty_cache()
+
+        if measure_entropy:
+            return output.view(tensor.shape), entropy
+        else:
+            return output.view(tensor.shape)
 
     def __gemmlowpQuantize__(self, tensor, delta, offset):
         if self.stochastic:

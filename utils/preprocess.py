@@ -14,6 +14,7 @@ __imagenet_pca = {
     ])
 }
 
+
 def scale_crop(input_size, scale_size=None, normalize=__imagenet_stats):
     t_list = [
         transforms.CenterCrop(input_size),

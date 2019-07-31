@@ -1,5 +1,6 @@
 from torch.nn.parallel.data_parallel import DataParallel
 
+
 def module_type_to_string(m):
     return (str(type(m)).replace('>', '').replace('\'', '').split('.')[-1]).replace('WithId', '')
 

@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torchvision
 from pytorch_quantizer.quantization import qtypes
 from utils.misc import Singleton
 from utils import attacher
@@ -16,7 +17,6 @@ import numpy as np
 from utils.dump_manager import DumpManager as DM
 from pytorch_quantizer.clipping.clipping_manager import StatisticalClipper, RatioClipper
 from pytorch_quantizer.quantization.qtypes.dummy_quantizer import DummyQuantizer
-
 
 VERBOSE = True
 
@@ -66,10 +66,10 @@ class MaxPool2dWithId(nn.MaxPool2d):
                 QMI().stats_manager.save_tensor_stats(out, 'activation_pooling', out_id)
             elif QMI().stats_mode is StatsMode.use_stats:
                 # Quantize using statistics
-                out = QMI().quantize_instant(out, "activation_pooling", stat_id=out_id, verbose=QMI().verbose)
+                out = QMI().quantize_instant(out, out_id, "activation_pooling", stat_id=out_id, verbose=QMI().verbose)
             else:
                 # No stats, quantize using actual values
-                out = QMI().quantize_instant(out, "activation_pooling", verbose=QMI().verbose)
+                out = QMI().quantize_instant(out, out_id, "activation_pooling", verbose=QMI().verbose)
 
         return out
 
@@ -174,7 +174,7 @@ class Conv2dWithId(nn.Conv2d):
                 QMI().stats_manager.save_tensor_stats(out, self.internal_name, activation_id)
             elif QMI().stats_mode is StatsMode.use_stats:
                 # Quantize using statistics
-                out_q = QMI().quantize_instant(out, tag_act, stat_id=activation_id,
+                out_q = QMI().quantize_instant(out, activation_id, tag_act, stat_id=activation_id,
                                                half_range=hasattr(self, 'before_relu'), verbose=QMI().verbose)
                 # print("%s: %d" % (activation_id, out.shape[2]*out.shape[3]))
                 if QMI().bcorr_act:
@@ -204,7 +204,7 @@ class Conv2dWithId(nn.Conv2d):
 
             else:
                 # No stats, quantize using actual values
-                out = QMI().quantize_instant(out, tag_act, half_range=hasattr(self, 'before_relu'), verbose=QMI().verbose)
+                out = QMI().quantize_instant(out, activation_id, tag_act, half_range=hasattr(self, 'before_relu'), verbose=QMI().verbose)
 
         if QMI().measure_stats.enabled:
             QMI().measure_stats.save_measure(out, activation_id)
@@ -236,13 +236,13 @@ class LinearWithId(nn.Linear):
             if QMI().stats_mode is StatsMode.collect_stats:
                 QMI().stats_manager.save_tensor_stats(out, tag_act, activation_id, force_global_min_max=('classifier' in tag_act))
             elif QMI().stats_mode is StatsMode.use_stats:
-                out_q = QMI().quantize_instant(out, tag_act, stat_id=activation_id, half_range=half_range,
+                out_q = QMI().quantize_instant(out, activation_id, tag_act, stat_id=activation_id, half_range=half_range,
                                                verbose=QMI().verbose)
 
                 out = out_q
 
             else:
-                out = QMI().quantize_instant(out, tag_act, half_range=half_range, verbose=QMI().verbose)
+                out = QMI().quantize_instant(out, activation_id, tag_act, half_range=half_range, verbose=QMI().verbose)
 
         if QMI().measure_stats.enabled:
             QMI().measure_stats.save_measure(out, activation_id)
@@ -339,8 +339,8 @@ class QuantizationManagerInference(QuantizationManagerBase):
 
         return op_manager
 
-    def quantize_instant(self, tensor, tag="", stat_id=None, half_range=False, override_att=None, verbose=False):
-        return self.op_manager.quantize_instant(tensor, tag, stat_id, half_range, override_att, verbose)
+    def quantize_instant(self, tensor, id, tag="", stat_id=None, half_range=False, override_att=None, verbose=False):
+        return self.op_manager.quantize_instant(tensor, id, tag, stat_id, half_range, override_att, verbose)
 
     def set_8bit_list(self, ignore_ids):
         self.op_manager.set_8bit_list(ignore_ids)
@@ -356,15 +356,19 @@ class QuantizationManagerInference(QuantizationManagerBase):
         for n, m in model.named_modules():
             weight_q = None
             if isinstance(m, torch.nn.Conv2d):
-                if m.weight.shape[1] == 3:
+                # In case of inceptionV3 leave first and second layer at 8 bit
+                if isinstance(model, torchvision.models.Inception3) and \
+                            (n == 'Conv2d_1a_3x3.conv' or n == 'Conv2d_2a_3x3.conv'):
+                    weight_q = QMI().quantize_instant(m.weight, n + '.weight', "weight", override_att=('num_bits', 8), verbose=True)
+                elif m.weight.shape[1] == 3:
                     # first layer leave in 8 bit
-                    weight_q = QMI().quantize_instant(m.weight, "weight", override_att=('num_bits', 8), verbose=True)
+                    weight_q = QMI().quantize_instant(m.weight, n + '.weight', "weight", override_att=('num_bits', 8), verbose=True)
                 else:
-                    weight_q = QMI().quantize_instant(m.weight, "weight", verbose=True)
+                    weight_q = QMI().quantize_instant(m.weight, n + '.weight', "weight", verbose=True)
 
             elif isinstance(m, torch.nn.Linear):
                 tag_weight = 'weight_classifier' if m.weight.shape[0] == 1000 else 'weight'
-                weight_q = QMI().quantize_instant(m.weight, tag_weight, verbose=True)
+                weight_q = QMI().quantize_instant(m.weight, n + '.weight', tag_weight, verbose=True)
 
             if weight_q is not None:
                 if self.vcorr_weight or self.bcorr_weight:
@@ -408,6 +412,7 @@ class TruncationOpManagerInference:
         classifier_quantizer.pcq_a = False
         classifier_quantizer.sm = StatisticManager
         classifier_quantizer.stats_kind = 'max'
+        classifier_quantizer.measure_entropy = False
         self.quantizers['activation_classifier'] = classifier_quantizer
 
         if qweight == 'f32':
@@ -427,6 +432,7 @@ class TruncationOpManagerInference:
         weights_quantizer.kld = False
         weights_quantizer.bit_alloc = False
         weights_quantizer.stats_kind = 'max'
+        weights_quantizer.measure_entropy = False
         self.quantizers['weight_classifier'] = weights_quantizer
 
         bias_quantizer, _ = self.__load_quantizer__('int8', qparams)
@@ -466,6 +472,7 @@ class TruncationOpManagerInference:
         pooling_quantizer.clipping = 'no'
         pooling_quantizer.kld = False
         pooling_quantizer.bit_alloc = False
+        pooling_quantizer.measure_entropy = False
         self.quantizers['activation_pooling'] = pooling_quantizer
 
     def __init__(self, args, qparams):
@@ -539,22 +546,12 @@ class TruncationOpManagerInference:
         fprop = self.activation_quantizer if fprop else None
         return attacher.pytorch_attach(tensor, fprop, None)
 
-    def quantize_instant(self, tensor, tag="", stat_id=None, half_range=False, override_att=None, verbose=False):
+    def quantize_instant(self, tensor, id, tag="", stat_id=None, half_range=False, override_att=None, verbose=False):
         # ignore quantization of first and last layer
         ignore_cond = False
         if stat_id is not None:
             ignore_cond = np.array([l == stat_id for l in self.ignore_ids]).any()
 
-        # if self.fp32_clip:
-        #     if ignore_cond:
-        #         return self.activations_clipper(tensor, tag, stat_id) if self.rho_act is not None else tensor
-        #     elif (tag == 'activation' or tag == 'activation_classifier' and tensor.shape[1] == 1000) or (tag == 'weight_classifier' and tensor.shape[0] == 1000):
-        #         return tensor  # Last linear layer. No clipping here
-        #     elif tag == 'weight':
-        #         return self.weights_clipper(tensor, tag) if self.rho_weight is not None else tensor
-        #     else:  # bias, pooling etc..
-        #         return tensor
-        # else:
         qtag = 'ignored' if ignore_cond else tag
         q = self.get_quantizer(qtag)
         q.half_range = half_range
@@ -562,4 +559,4 @@ class TruncationOpManagerInference:
         if verbose:
             print("Quantize {0:21} | Id - {1:18} | {2:} | {3:}".format(tag, str(stat_id), str(q), str(tensor.device)))
 
-        return q(tensor, tag, stat_id, override_att)
+        return q(tensor, id, tag, stat_id, override_att)

@@ -5,7 +5,6 @@ from utils import attacher
 from utils.monitor import Monitor
 import abc
 
-
 INFERENCE_ONLY = False
 
 class QuantizationManagerBase(metaclass=Singleton):

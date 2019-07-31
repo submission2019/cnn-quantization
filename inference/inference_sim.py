@@ -32,7 +32,8 @@ from utils.dump_manager import DumpManager as DM
 # import pretrainedmodels
 # import pretrainedmodels.utils as mutils
 from pathlib import Path
-import mlflow
+
+from utils.mllog import MLlogger
 
 
 torch.backends.cudnn.deterministic = True
@@ -40,8 +41,6 @@ torch.backends.cudnn.deterministic = True
 
 home = str(Path.home())
 IMAGENET_FOR_INFERENCE = '/home/cvds_lab/datasets/ILSVRC2012/'
-
-mlflow.set_tracking_uri(os.path.join(home, 'mlruns_mxt'))
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -100,11 +99,14 @@ parser.add_argument('--per_channel_quant_weights', '-pcq_w', action='store_true'
 parser.add_argument('--per_channel_quant_act', '-pcq_a', action='store_true', help='Per channel quantization of activations', default=False)
 parser.add_argument('--bit_alloc_act', '-baa', action='store_true', help='Optimal bit allocation for each channel of activations', default=False)
 parser.add_argument('--bit_alloc_weight', '-baw', action='store_true', help='Optimal bit allocation for each channel of weights', default=False)
-parser.add_argument('--bit_alloc_rmode', '-bam', help='One of [round, ceil]', default='ceil')
+parser.add_argument('--bit_alloc_rmode', '-bam', help='One of [round, ceil]', default='round')
 parser.add_argument('--bit_alloc_prior', '-bap', help='One of [gaus, laplace]', default='gaus')
+parser.add_argument('--bit_alloc_target_act', '-bata', type=float, help='Target value for bit allocation quota of activations', default=None)
+parser.add_argument('--bit_alloc_target_weight', '-batw', type=float, help='Target value for bit allocation quota of weights', default=None)
 parser.add_argument('--bias_corr_act', '-bca', action='store_true', help='Bias correction for activations', default=False)
 parser.add_argument('--bias_corr_weight', '-bcw', action='store_true', help='Bias correction for weights', default=False)
 parser.add_argument('--var_corr_weight', '-vcw', action='store_true', help='Variance correction for weights', default=False)
+parser.add_argument('--measure_entropy', '-me', action='store_true', help='Measure entropy of activations', default=False)
 parser.add_argument('--mlf_experiment', '-mlexp', help='Name of experiment', default=None)
 args = parser.parse_args()
 
@@ -121,8 +123,12 @@ elif args.arch == 'resnet101':
 elif args.arch == 'inception_v3':
     max_mse_order_id = ['conv5_activation', 'conv12_activation', 'conv1_activation', 'conv7_activation', 'conv4_activation', 'conv2_activation', 'conv14_activation', 'conv19_activation', 'conv10_activation', 'conv92_activation', 'conv21_activation', 'conv22_activation', 'conv9_activation', 'conv77_activation', 'conv16_activation', 'conv47_activation', 'conv48_activation', 'conv17_activation', 'conv58_activation', 'conv8_activation', 'conv55_activation', 'conv56_activation', 'conv40_activation', 'conv63_activation', 'conv15_activation', 'conv62_activation', 'conv84_activation', 'conv54_activation', 'conv57_activation', 'conv52_activation', 'conv65_activation', 'conv91_activation', 'conv76_activation', 'conv34_activation', 'conv51_activation', 'conv85_activation', 'conv53_activation', 'conv83_activation', 'conv35_activation', 'conv50_activation', 'conv46_activation', 'conv82_activation', 'conv61_activation', 'conv30_activation', 'conv37_activation', 'conv67_activation', 'conv75_activation', 'conv64_activation', 'conv29_activation', 'conv66_activation', 'conv44_activation', 'conv33_activation', 'conv43_activation', 'conv38_activation', 'conv45_activation', 'conv42_activation', 'conv23_activation', 'conv36_activation', 'conv60_activation', 'conv32_activation', 'conv41_activation', 'conv79_activation', 'conv6_activation', 'conv13_activation', 'conv78_activation', 'conv20_activation', 'conv73_activation', 'conv74_activation', 'conv80_activation', 'conv31_activation', 'conv27_activation', 'conv81_activation', 'conv88_activation', 'conv68_activation', 'conv28_activation', 'conv26_activation', 'conv89_activation', 'conv72_activation', 'conv93_activation', 'conv90_activation', 'conv94_activation', 'conv3_activation', 'conv24_activation', 'conv87_activation', 'conv18_activation', 'conv69_activation', 'conv59_activation', 'conv25_activation', 'conv49_activation', 'linear1_activation', 'conv39_activation', 'conv86_activation', 'conv11_activation', 'conv95_activation']
 
+torch.manual_seed(12345)
+
+
 class InferenceModel:
-    def __init__(self):
+    def __init__(self, ml_logger=None):
+        self.ml_logger = ml_logger
         global args, best_prec1
 
         if args.seed is not None:
@@ -260,12 +266,12 @@ class InferenceModel:
             print(elog)
         else:
             val_loss, val_prec1, val_prec5 = validate(self.val_loader, self.model, self.criterion)
-            if mlflow.active_run() is not None:
-                mlflow.log_metric('top1', val_prec1)
-                mlflow.log_metric('top5', val_prec5)
-                mlflow.log_metric('loss', val_loss)
-            return val_loss, val_prec1, val_prec5
+            if self.ml_logger is not None and self.ml_logger.mlflow.active_run() is not None:
+                self.ml_logger.mlflow.log_metric('top1', val_prec1)
+                self.ml_logger.mlflow.log_metric('top5', val_prec5)
+                self.ml_logger.mlflow.log_metric('loss', val_loss)
 
+            return val_loss, val_prec1, val_prec5
 
 
 def validate(val_loader, model, criterion):
@@ -286,6 +292,8 @@ def validate(val_loader, model, criterion):
         for i, (input, target) in enumerate(val_loader):
             if (args.stats_mode == 'collect' and i*args.batch_size >= args.cal_set_size and (args.kld_threshold or args.aciq_cal)) or \
                 (args.subset is not None and i*args.batch_size >= args.subset):
+                break
+            if args.measure_entropy and i*args.batch_size >= args.subset:
                 break
             # Uncomment to enable dump
             # QM().disable()
@@ -333,7 +341,7 @@ def validate(val_loader, model, criterion):
 
     return losses.avg, top1.avg, top5.avg
 
-def get_params():
+def get_params(logger=None):
     qparams = {
         'int': {
             'clipping': args.clipping,
@@ -346,9 +354,13 @@ def get_params():
             'bit_alloc_weight': args.bit_alloc_weight,
             'bit_alloc_rmode': args.bit_alloc_rmode,
             'bit_alloc_prior': args.bit_alloc_prior,
+            'bit_alloc_target_act': args.bit_alloc_target_act,
+            'bit_alloc_target_weight': args.bit_alloc_target_weight,
             'bcorr_act': args.bias_corr_act,
             'bcorr_weight': args.bias_corr_weight,
-            'vcorr_weight': args.var_corr_weight
+            'vcorr_weight': args.var_corr_weight,
+            'logger': logger,
+            'measure_entropy': args.measure_entropy
         },
         'qmanager':{
             'rho_act': args.rho_act,
@@ -357,15 +369,14 @@ def get_params():
     }  # TODO: add params for bfloat
     return qparams
 
+
 if __name__ == '__main__':
     if args.stats_mode != 'collect':
-        mlflow.set_experiment(args.arch if args.mlf_experiment is None else args.mlf_experiment)
-        with mlflow.start_run(run_name="{}_W{}_A{}".format(args.arch, args.qweight, args.qtype)):
-            params = vars(args)
-            for p in params:
-                mlflow.log_param(p, params[p])
-            with QM(args, get_params()):
-                im = InferenceModel()
+        experiment = args.arch if args.mlf_experiment is None else args.mlf_experiment
+        with MLlogger(os.path.join(home, 'mlruns_mxt'), experiment, args,
+                      name_args=[args.arch, "W{}A{}".format(args.qweight, args.qtype)]) as ml_logger:
+            with QM(args, get_params(ml_logger)):
+                im = InferenceModel(ml_logger)
                 im.run()
     else:
         with QM(args, get_params()):

@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 
+
 def absorb_bn(module, bn_module):
     w = module.weight.data
     if module.bias is None:
