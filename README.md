@@ -114,12 +114,15 @@ python inference/inference_sim.py -a resnet50 -b 512 -pcq_w -pcq_a --qtype int4 
 >* Prec@1 74.2 Prec@5 91.932
 <br/>
 
-### Clipping by 2 std
+### Clipping by 2 std and 4bit quantization of activations
 ```
-python inference/inference_sim.py -a resnet50 -b 512 --device_ids 4 -pcq_w -pcq_a -sh --qtype int4 -c 2std
+python inference/inference_sim.py -a resnet50 -b 512 -pcq_w -pcq_a -sh --qtype int4 -c 2std
 ```
 >* Prec@1 15.440 Prec@5 34.646
 
-
-
+### ACIQ with layer wise quantization
+```
+python inference/inference_sim.py -a resnet50 -b 512 --qtype int4 -c laplace -sm use
+```
+>* Prec@1 71.404 Prec@5 90.248
 
