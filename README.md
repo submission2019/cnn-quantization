@@ -99,4 +99,27 @@ We use GEMMLOWP quantization scheme described [here](https://github.com/google/g
 We implemented above quantization scheme in pytorch. We optimize this scheme by applying ACIQ to reduce range and optimally allocate bits for each channel.
 
 Quantization code can be found in [int_quantizer.py](pytorch_quantizer/quantization/qtypes/int_quantizer.py)
+<br/><br/>
+
+## Additional use cases
+### Inference using offline statistics
+Collect statistics on 32 images
+```
+python inference/inference_sim.py -a resnet50 -b 1 --qtype int8 -sm collect -ac -cs 32
+```
+Run inference experiment W4A4 + ACIQ + Bit Alloc(A) + Bit Alloc(W) + Bias correction using offline statistics.
+```
+python inference/inference_sim.py -a resnet50 -b 512 -pcq_w -pcq_a --qtype int4 -qw int4 -c laplace -baa -baw -bcw -sm use
+```
+>* Prec@1 74.2 Prec@5 91.932
 <br/>
+
+### Clipping by 2 std
+```
+python inference/inference_sim.py -a resnet50 -b 512 --device_ids 4 -pcq_w -pcq_a -sh --qtype int4 -c 2std
+```
+>* Prec@1 15.440 Prec@5 34.646
+
+
+
+
