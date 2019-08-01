@@ -129,3 +129,14 @@ python inference/inference_sim.py -a resnet50 -b 512 --qtype int4 -c laplace -sm
 ## Bin allocation and Variable length codding
 Given a quota on the total number of bits allowed to be written to memory, the optimal number of bins Bi for channel i derived from eq. 10.<br/>
 ![eq-10](fig/bin-alloc-eq10.png)<br/>
+
+We evaluate the effect of huffman codding on activations and weights by mesuaring average entropy on all layers.
+
+```
+python -a resnet50 -b 128 --device_ids 4 -pcq_w -pcq_a -sh --qtype int4 -qw int4 -c laplace -baa -baw -bcw -bata 5.7 -batw 5.7 -mtq -me -ss 1024
+```
+> * Prec@1 76.465 Prec@5 93.164
+>
+> Average bit rate: avg.entropy.act - 4.2532382216598865
+>
+> Average bit rate: avg.entropy.weight - 4.69881864977962
