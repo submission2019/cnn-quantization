@@ -128,3 +128,4 @@ python inference/inference_sim.py -a resnet50 -b 512 --qtype int4 -c laplace -sm
 
 ## Bin allocation and Variable length codding
 Given a quota on the total number of bits allowed to be written to memory, the optimal number of bins Bi for channel i derived from eq. 10.<br/>
+![eq-10](fig/bin-alloc-eq10.png)<br/>
