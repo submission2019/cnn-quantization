@@ -108,6 +108,7 @@ parser.add_argument('--bias_corr_weight', '-bcw', action='store_true', help='Bia
 parser.add_argument('--var_corr_weight', '-vcw', action='store_true', help='Variance correction for weights', default=False)
 parser.add_argument('--measure_entropy', '-me', action='store_true', help='Measure entropy of activations', default=False)
 parser.add_argument('--mlf_experiment', '-mlexp', help='Name of experiment', default=None)
+parser.add_argument('--mid_thread_quant', '-mtq', action='store_true', help='Do mid thread quantization instead of gemmlowp. Available only with bin allocation.', default=False)
 args = parser.parse_args()
 
 if args.arch == 'resnet50':
@@ -360,7 +361,8 @@ def get_params(logger=None):
             'bcorr_weight': args.bias_corr_weight,
             'vcorr_weight': args.var_corr_weight,
             'logger': logger,
-            'measure_entropy': args.measure_entropy
+            'measure_entropy': args.measure_entropy,
+            'mtd_quant': args.mid_thread_quant
         },
         'qmanager':{
             'rho_act': args.rho_act,
@@ -378,6 +380,10 @@ if __name__ == '__main__':
             with QM(args, get_params(ml_logger)):
                 im = InferenceModel(ml_logger)
                 im.run()
+
+            if args.measure_entropy:
+                for id in ml_logger.metters:
+                    print("Average bit rate: {} - {}".format(id, ml_logger.metters[id].avg))
     else:
         with QM(args, get_params()):
             im = InferenceModel()

@@ -76,6 +76,7 @@ class IntQuantizer(Function):
         self.bit_alloc_target_weight = params['bit_alloc_target_weight'] if params['bit_alloc_target_weight'] is not None else self.num_bits
         self.measure_entropy = params['measure_entropy']
         self.logger = params['logger']
+        self.mtd_quant = params['mtd_quant']
 
         self.alpha_gaus = {1: 1.24, 2: 1.71, 3: 2.15, 4: 2.55, 5: 2.93, 6: 3.28, 7: 3.61, 8: 3.92}
         self.alpha_gaus_positive = {1: 1.71, 2: 2.15, 3: 2.55, 4: 2.93, 5: 3.28, 6: 3.61, 7: 3.92, 8: 4.2}
@@ -96,17 +97,22 @@ class IntQuantizer(Function):
             res = self.gemmlowpKldQuantize(tensor, tag, stat_id=stat_id)
         elif self.clipping != 'no':
             # print("clipping %s: %d" % (tag, self.num_bits))
-            # TODO: select between mid-tread and gemmlowp by cmd flag
-            res = self.gemmlowpClippingQuantize(tensor, id, tag, stat_id=stat_id, clip_type=self.clipping)
-            # res = self.mid_tread_quantize_activation(tensor, id)
+            if self.mtd_quant:
+                res = self.mid_tread_quantize_activation(tensor, id)
+            else:
+                res = self.gemmlowpClippingQuantize(tensor, id, tag, stat_id=stat_id, clip_type=self.clipping)
         elif self.pcq_w:
             # print("pcq_w %s: %d" % (tag, self.num_bits))
-            res = self.gemmlowpQuantizeWeightsPerChannel(tensor, id)
-            # res = self.mid_tread_quantize_weights_per_channel(tensor, id)
+            if self.mtd_quant:
+                res = self.mid_tread_quantize_weights_per_channel(tensor, id)
+            else:
+                res = self.gemmlowpQuantizeWeightsPerChannel(tensor, id)
         elif self.pcq_a and len(tensor.shape) > 3 and (tensor.shape[2] > 1 or tensor.shape[3] > 1):
             # print("pcq_a %s: %d" % (tag, self.num_bits))
-            res = self.gemmlowpQuantizeActivationPerChannel(tensor, id, tag, stat_id=stat_id)
-            # res = self.mid_tread_quantize_activation_per_channel(tensor, id)
+            if self.mtd_quant:
+                res = self.mid_tread_quantize_activation_per_channel(tensor, id)
+            else:
+                res = self.gemmlowpQuantizeActivationPerChannel(tensor, id, tag, stat_id=stat_id)
         else:
             # print("no clipping %s: %d" % (tag, self.num_bits))
             res = self.gemmlowpMinMaxQuantize(tensor, tag, stat_id=stat_id)
