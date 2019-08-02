@@ -135,6 +135,6 @@ We evaluate the effect of huffman codding on activations and weights by mesuarin
 ```
 python -a resnet50 -b 128 --device_ids 4 -pcq_w -pcq_a -sh --qtype int4 -qw int4 -c laplace -baa -baw -bcw -bata 5.7 -batw 5.7 -mtq -me -ss 1024
 ```
-> * Prec@1 76.465 Prec@5 93.164
+> * Prec@1 70.801 Prec@5 91.211
 >
-> Average bit rate: avg.entropy.act - 4.2532382216598865
+> Average bit rate: avg.entropy.act - 2.215521374096473
