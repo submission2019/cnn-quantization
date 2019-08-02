@@ -101,7 +101,7 @@ We implemented above quantization scheme in pytorch. We optimize this scheme by 
 Quantization code can be found in [int_quantizer.py](pytorch_quantizer/quantization/qtypes/int_quantizer.py)
 <br/><br/>
 
-## Additional use cases
+## Additional use cases and experiments
 ### Inference using offline statistics
 Collect statistics on 32 images
 ```
@@ -114,7 +114,7 @@ python inference/inference_sim.py -a resnet50 -b 512 -pcq_w -pcq_a --qtype int4 
 >* Prec@1 74.2 Prec@5 91.932
 <br/>
 
-### Clipping by 2 std and 4bit quantization of activations
+### 4-bit quantization with clipping thresholds of 2 std
 ```
 python inference/inference_sim.py -a resnet50 -b 512 -pcq_w -pcq_a -sh --qtype int4 -c 2std
 ```
