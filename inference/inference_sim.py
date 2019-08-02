@@ -89,7 +89,7 @@ parser.add_argument('--stats_folder', '-sf', default=None, help='Specify directo
 parser.add_argument('--stats_batch_avg', '-sba', action='store_true', help='Whether average statistics across the batch')
 parser.add_argument('--custom_test', '-ct', action='store_true', default=False, help='Perform some custom test.')
 parser.add_argument('--dump_dir', '-dd', default=None, help='Directory to dump tensors')
-parser.add_argument('--measure_stats', '-m', action='store_true', help='Measure statistics of activations during runtime', default=False)
+parser.add_argument('--measure_stats', '-ms', action='store_true', help='Measure statistics of activations during runtime', default=False)
 parser.add_argument('--measure_stats_folder', '-mf', help='Folder to save measured statistics of activations during runtime', default=None)
 parser.add_argument('--kld_threshold', '-kld', action='store_true', help='Measure statistics of activations during runtime', default=False)
 parser.add_argument('--aciq_cal', '-ac', action='store_true', help='Enable aciq calibration mode', default=False)
