@@ -133,7 +133,7 @@ Given a quota on the total number of bits allowed to be written to memory, the o
 We evaluate the effect of huffman codding on activations and weights by mesuaring average entropy on all layers.
 
 ```
-python -a resnet50 -b 128 --device_ids 4 -pcq_w -pcq_a -sh --qtype int4 -qw int4 -c laplace -baa -baw -bcw -bata 5.7 -batw 5.7 -mtq -me -ss 1024
+python -a vgg16 -b 32 --device_ids 4 -pcq_w -pcq_a -sh --qtype int4 -qw int4 -c laplace -baa -baw -bcw -bata 5.3 -batw 5.3 -mtq -me -ss 1024
 ```
 > * Prec@1 70.801 Prec@5 91.211
 >
