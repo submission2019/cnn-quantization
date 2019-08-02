@@ -138,5 +138,3 @@ python -a resnet50 -b 128 --device_ids 4 -pcq_w -pcq_a -sh --qtype int4 -qw int4
 > * Prec@1 76.465 Prec@5 93.164
 >
 > Average bit rate: avg.entropy.act - 4.2532382216598865
->
-> Average bit rate: avg.entropy.weight - 4.69881864977962
